@@ -1,0 +1,27 @@
+/**
+ * ReportePDF.jsx  —  v10  "Escala aumentada para impresión"
+ *
+ * A4_W/A4_H subidos de 794×1123 a 960×1358 (~+21%)
+ * El canvas HTML se renderiza más grande → al mapearlo a jsPDF (que siempre
+ * usa 595×841pt) el contenido queda más grande en el PDF impreso.
+ * Todas las constantes derivadas se actualizan automáticamente.
+ */
+
+import { useState } from 'react'
+import jsPDF from 'jspdf'
+import html2canvas from 'html2canvas'
+
+// ── CONSTANTES A4 ─────────────────────────────────────────────
+const A4_W        = 960    // era 794  (+21%)
+const A4_H        = 1358   // era 1123 (+21%)
+const PAD_X       = 48     // era 40
+const PAD_TOP     = 26     // era 22
+const HEADER_H    = 184    // era 152
+const HEADER_C_H  = 63     // era 52
+const FOOTER_H    = 56     // era 46
+const EVENTO_H    = 53     // era 44
+const HIST_LABEL  = 34     // era 28
+const FOTO_LABEL  = 31     // era 26
+const GAP         = 12     // era 10
+const BODY_W      = A4_W - PAD_X * 2   // 864px disponibles para fotos
+const BODY_P2     = A4_H - HEADER_C_H - FOOTER_H - PAD_TOP - 26
