@@ -7,10 +7,9 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import api from '../lib/api'
-import Topbar from '../components/Topbar'
+import AppShell from '../components/AppShell'
 import DetalleOS from '../components/DetalleOS'
 
-// ── CONSTANTES ────────────────────────────────────────────────
 const TIPOS_OS = [
   { id: 'ordinaria',   label: 'Ordinaria',   desc: 'Planificacion semanal de servicios y misiones', icon: '📋', color: '#1a2744', bg: '#e4eaf5' },
   { id: 'adicional',   label: 'Adicional',   desc: 'Servicios especificos de caracter adicional',   icon: '⭐', color: '#0f6e56', bg: '#e8faf2' },
@@ -18,13 +17,15 @@ const TIPOS_OS = [
 ]
 
 const ESTADO_OS = {
-  borrador:   { label: 'Borrador',       bg: '#f5f5f7', color: '#8e8e93' },
-  validacion: { label: 'En validacion',  bg: '#faeeda', color: '#854f0b' },
-  vigente:    { label: 'Vigente',        bg: '#e8faf2', color: '#0f6e56' },
-  cumplida:   { label: 'Cumplida',       bg: '#f5f5f7', color: '#aeaeb2' },
+  borrador:   { label: 'Borrador',      bg: '#f5f5f7', color: '#8e8e93' },
+  validacion: { label: 'En validacion', bg: '#faeeda', color: '#854f0b' },
+  validada:   { label: 'Validada',      bg: '#e8faf2', color: '#0f6e56' },
+  vigente:    { label: 'Vigente',       bg: '#e8faf2', color: '#0f6e56' },
+  cumplida:   { label: 'Cumplida',      bg: '#f5f5f7', color: '#aeaeb2' },
 }
 
-// ── UTILS ─────────────────────────────────────────────────────
+const DIAS_LABEL = ['Lu', 'Ma', 'Mi', 'Ju', 'Vi', 'Sa', 'Do']
+
 function getLunesViernes(offset = 0) {
   const hoy = new Date()
   const dow  = hoy.getDay()
@@ -49,9 +50,7 @@ function fmtPeriodoOS(os) {
   return 'Sin fechas'
 }
 
-// ── MODAL NUEVA OS ────────────────────────────────────────────
-const DIAS_LABEL = ['Lu', 'Ma', 'Mi', 'Ju', 'Vi', 'Sa', 'Do']
-
+// ── Modal nueva OS ────────────────────────────────────────────
 function ModalNuevaOS({ onConfirm, onClose }) {
   const [tipo, setTipo]           = useState('ordinaria')
   const [fechaInicio, setFechaInicio] = useState(getLunesViernes(1).inicio)
@@ -65,37 +64,26 @@ function ModalNuevaOS({ onConfirm, onClose }) {
     while (d.getMonth() === mesVista.getMonth()) { dias.push(new Date(d)); d.setDate(d.getDate() + 1) }
     return dias
   }
-
   function toggleFecha(iso) {
     setFechasSel(prev => prev.includes(iso) ? prev.filter(f => f !== iso) : [...prev, iso].sort())
   }
-
   function canConfirm() {
     if (tipo !== 'ordinaria') return fechasSel.length > 0
     return fechaInicio && fechaFin && fechaFin >= fechaInicio
   }
-
   function confirmar() {
     if (!canConfirm()) return
-    if (tipo !== 'ordinaria') {
-      onConfirm({ tipo, fechas: fechasSel })
-    } else {
-      onConfirm({ tipo, semana_inicio: fechaInicio, semana_fin: fechaFin })
-    }
+    if (tipo !== 'ordinaria') { onConfirm({ tipo, fechas: fechasSel }) }
+    else { onConfirm({ tipo, semana_inicio: fechaInicio, semana_fin: fechaFin }) }
   }
 
-  const INP_DATE = {
-    padding: '9px 12px', borderRadius: 10, border: '1px solid #e5e5ea',
-    fontSize: 14, fontFamily: 'inherit', color: '#1d1d1f', background: '#f9f9fb',
-    outline: 'none', width: '100%', boxSizing: 'border-box',
-  }
+  const INP = { padding: '9px 12px', borderRadius: 10, border: '1px solid #e5e5ea', fontSize: 14, fontFamily: 'inherit', color: '#1d1d1f', background: '#f9f9fb', outline: 'none', width: '100%', boxSizing: 'border-box' }
 
   return (
     <>
-      <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.28)', zIndex: 100, backdropFilter: 'blur(2px)' }}/>
-      <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', zIndex: 101, background: '#fff', borderRadius: 20, padding: 28, width: 460, maxWidth: '95vw', boxShadow: '0 20px 60px rgba(0,0,0,0.18)' }}>
+      <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.28)', zIndex: 1000, backdropFilter: 'blur(2px)' }}/>
+      <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', zIndex: 1001, background: '#fff', borderRadius: 20, padding: 28, width: 460, maxWidth: '95vw', boxShadow: '0 20px 60px rgba(0,0,0,0.18)' }}>
         <div style={{ fontSize: 18, fontWeight: 700, color: '#1a2744', marginBottom: 20 }}>Nueva Orden de Servicio</div>
-
         <div style={{ marginBottom: 20 }}>
           <div style={{ fontSize: 11, fontWeight: 700, color: '#aeaeb2', letterSpacing: '0.06em', marginBottom: 10 }}>TIPO DE ORDEN</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -118,11 +106,11 @@ function ModalNuevaOS({ onConfirm, onClose }) {
             <div style={{ display: 'flex', gap: 10 }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1 }}>
                 <span style={{ fontSize: 11, color: '#8e8e93' }}>Desde</span>
-                <input type="date" value={fechaInicio} onChange={e => setFechaInicio(e.target.value)} style={INP_DATE}/>
+                <input type="date" value={fechaInicio} onChange={e => setFechaInicio(e.target.value)} style={INP}/>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1 }}>
                 <span style={{ fontSize: 11, color: '#8e8e93' }}>Hasta</span>
-                <input type="date" value={fechaFin} min={fechaInicio} onChange={e => setFechaFin(e.target.value)} style={INP_DATE}/>
+                <input type="date" value={fechaFin} min={fechaInicio} onChange={e => setFechaFin(e.target.value)} style={INP}/>
               </div>
             </div>
           </div>
@@ -131,19 +119,13 @@ function ModalNuevaOS({ onConfirm, onClose }) {
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
               <div style={{ fontSize: 11, fontWeight: 700, color: '#aeaeb2', letterSpacing: '0.06em' }}>FECHAS DEL OPERATIVO</div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <button onClick={() => setMesVista(m => { const n = new Date(m); n.setMonth(n.getMonth() - 1); return n })}
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#8e8e93', fontSize: 16, padding: '0 4px' }}>‹</button>
-                <span style={{ fontSize: 12, fontWeight: 600, color: '#1a2744', minWidth: 90, textAlign: 'center' }}>
-                  {mesVista.toLocaleDateString('es-AR', { month: 'long', year: 'numeric' })}
-                </span>
-                <button onClick={() => setMesVista(m => { const n = new Date(m); n.setMonth(n.getMonth() + 1); return n })}
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#8e8e93', fontSize: 16, padding: '0 4px' }}>›</button>
+                <button onClick={() => setMesVista(m => { const n = new Date(m); n.setMonth(n.getMonth() - 1); return n })} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#8e8e93', fontSize: 16, padding: '0 4px' }}>‹</button>
+                <span style={{ fontSize: 12, fontWeight: 600, color: '#1a2744', minWidth: 90, textAlign: 'center' }}>{mesVista.toLocaleDateString('es-AR', { month: 'long', year: 'numeric' })}</span>
+                <button onClick={() => setMesVista(m => { const n = new Date(m); n.setMonth(n.getMonth() + 1); return n })} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#8e8e93', fontSize: 16, padding: '0 4px' }}>›</button>
               </div>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4, marginBottom: 6 }}>
-              {DIAS_LABEL.map(d => (
-                <div key={d} style={{ textAlign: 'center', fontSize: 10, fontWeight: 700, color: '#aeaeb2', padding: '3px 0' }}>{d}</div>
-              ))}
+              {DIAS_LABEL.map(d => <div key={d} style={{ textAlign: 'center', fontSize: 10, fontWeight: 700, color: '#aeaeb2', padding: '3px 0' }}>{d}</div>)}
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4 }}>
               {Array((new Date(mesVista.getFullYear(), mesVista.getMonth(), 1).getDay() + 6) % 7).fill(null).map((_, i) => <div key={'e'+i}/>)}
@@ -178,17 +160,16 @@ function ModalNuevaOS({ onConfirm, onClose }) {
   )
 }
 
-// ── CARD OS ───────────────────────────────────────────────────
+// ── Card OS ───────────────────────────────────────────────────
 function CardOS({ os, onClick, onEliminar }) {
   const est      = ESTADO_OS[os.estado] ?? ESTADO_OS.borrador
   const tipoInfo = TIPOS_OS.find(t => t.id === os.tipo) ?? TIPOS_OS[0]
-  const esAdicional = os.tipo === 'adicional'
 
-  const tituloHeader = esAdicional
+  const tituloHeader = os.tipo === 'adicional'
     ? os.titulo
     : `OS-${String(os.numero || 0).padStart(3, '0')}`
 
-  const subtitulo = esAdicional
+  const subtitulo = os.tipo === 'adicional'
     ? fmtPeriodoOS(os)
     : os.titulo || fmtPeriodoOS(os)
 
@@ -201,7 +182,6 @@ function CardOS({ os, onClick, onEliminar }) {
       <div style={{ width: 40, height: 40, borderRadius: 10, background: tipoInfo.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>
         {tipoInfo.icon}
       </div>
-
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3, flexWrap: 'wrap' }}>
           <span style={{ fontSize: 15, fontWeight: 700, color: '#1a2744', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 260 }}>{tituloHeader}</span>
@@ -210,14 +190,10 @@ function CardOS({ os, onClick, onEliminar }) {
         </div>
         <div style={{ fontSize: 12, color: '#8e8e93' }}>{subtitulo}</div>
       </div>
-
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#c7c7cc" strokeWidth="2" style={{ flexShrink: 0 }}><polyline points="9 18 15 12 9 6"/></svg>
 
       {os.estado === 'borrador' && (
-        <button onClick={e => {
-            e.stopPropagation()
-            onEliminar(os)
-          }}
+        <button onClick={e => { e.stopPropagation(); onEliminar(os) }}
           title="Eliminar"
           style={{ padding: '5px 8px', borderRadius: 8, border: 'none', background: 'transparent', color: '#c7c7cc', cursor: 'pointer', display: 'flex', alignItems: 'center', flexShrink: 0 }}
           onMouseEnter={e => { e.currentTarget.style.background = '#fce8e8'; e.currentTarget.style.color = '#e24b4a' }}
@@ -229,16 +205,16 @@ function CardOS({ os, onClick, onEliminar }) {
   )
 }
 
-// ── COMPONENTE PRINCIPAL ──────────────────────────────────────
+// ── Principal ─────────────────────────────────────────────────
 export default function OrdenServicio() {
   const { profile } = useAuth()
   const navigate    = useNavigate()
-  const [ordenes, setOrdenes]   = useState([])
-  const [loading, setLoading]   = useState(true)
-  const [selected, setSelected] = useState(null)
-  const [creando, setCreando]   = useState(false)
+  const [ordenes, setOrdenes]     = useState([])
+  const [loading, setLoading]     = useState(true)
+  const [selected, setSelected]   = useState(null)
+  const [creando, setCreando]     = useState(false)
   const [showModal, setShowModal] = useState(false)
-  const [tab, setTab]           = useState('activas')
+  const [tab, setTab]             = useState('activas')
 
   useEffect(() => { fetchOrdenes() }, [])
 
@@ -247,30 +223,18 @@ export default function OrdenServicio() {
     try {
       const data = await api.get('/api/os')
       setOrdenes(data ?? [])
-    } catch (e) {
-      console.warn('Error cargando OS:', e)
-    }
+    } catch (e) { console.warn('Error cargando OS:', e) }
     setLoading(false)
   }
 
   async function handleEliminar(os) {
-    const label = os.tipo === 'adicional'
-      ? os.titulo
-      : `OS-${String(os.numero || 0).padStart(3, '0')}`
-
+    const label = os.tipo === 'adicional' ? os.titulo : `OS-${String(os.numero || 0).padStart(3, '0')}`
     if (!window.confirm(`Eliminar "${label}"? Esta accion no se puede deshacer.`)) return
-
     try {
-      // Las adicionales tienen su propio endpoint
-      if (os.tipo === 'adicional') {
-        await api.delete(`/api/os-adicional/${os.id}`)
-      } else {
-        await api.delete(`/api/os/${os.id}`)
-      }
+      if (os.tipo === 'adicional') await api.delete(`/api/os-adicional/${os.id}`)
+      else await api.delete(`/api/os/${os.id}`)
       fetchOrdenes()
-    } catch (err) {
-      alert(err.message || 'Error al eliminar')
-    }
+    } catch (err) { alert(err.message || 'Error al eliminar') }
   }
 
   async function crearOS({ tipo, semana_inicio, semana_fin, fechas }) {
@@ -281,30 +245,16 @@ export default function OrdenServicio() {
       navigate(`/os-adicional?${params.toString()}`)
       return
     }
-
     setCreando(true)
     setShowModal(false)
     try {
       const tituloMap = { ordinaria: `Semana ${semana_inicio}`, alcoholemia: 'OS Alcoholemia' }
-      const payload = {
-        tipo,
-        titulo: tituloMap[tipo] || `OS ${tipo}`,
-        semana_inicio: semana_inicio || null,
-        semana_fin:    semana_fin    || null,
-        base_id: profile?.base_id,
-      }
+      const payload = { tipo, titulo: tituloMap[tipo] || `OS ${tipo}`, semana_inicio: semana_inicio || null, semana_fin: semana_fin || null, base_id: profile?.base_id }
       const data = await api.post('/api/os', payload)
-
-      if (tipo !== 'ordinaria' && fechas?.length > 0) {
-        await api.post(`/api/os/${data.id}/fechas`, { fechas })
-      }
-
+      if (tipo !== 'ordinaria' && fechas?.length > 0) await api.post(`/api/os/${data.id}/fechas`, { fechas })
       await fetchOrdenes()
       setSelected(data)
-    } catch (e) {
-      console.warn('Error creando OS:', e)
-      alert('No se pudo crear la OS')
-    }
+    } catch (e) { console.warn('Error creando OS:', e); alert('No se pudo crear la OS') }
     setCreando(false)
   }
 
@@ -312,34 +262,30 @@ export default function OrdenServicio() {
   const cumplidas = ordenes.filter(o => o.estado === 'cumplida')
   const lista     = tab === 'activas' ? activas : cumplidas
 
-  if (selected) return <DetalleOS os={selected} onBack={() => setSelected(null)} onRefresh={fetchOrdenes}/>
+  const accionHeader = { label: creando ? 'Creando...' : '+ Nueva OS', onClick: () => !creando && setShowModal(true) }
+
+  // Vista detalle (OS ordinaria seleccionada)
+  if (selected) {
+    return (
+      <AppShell titulo="Ordenes de servicio">
+        <DetalleOS os={selected} onBack={() => setSelected(null)} onRefresh={fetchOrdenes}/>
+      </AppShell>
+    )
+  }
 
   return (
-    <div style={{ height: '100vh', background: '#f5f5f7', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      <Topbar/>
-
+    <AppShell titulo="Ordenes de servicio" accionHeader={accionHeader}>
       {showModal && <ModalNuevaOS onConfirm={crearOS} onClose={() => setShowModal(false)}/>}
 
-      {/* Header */}
-      <div style={{ background: '#fff', padding: '18px 40px 0', borderBottom: '0.5px solid #e5e5ea', flexShrink: 0 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
-          <div>
-            <div style={{ fontSize: 26, fontWeight: 700, color: '#1a2744', letterSpacing: '-0.7px', marginBottom: 3 }}>Ordenes de servicio</div>
-            <div style={{ fontSize: 13, color: '#aeaeb2' }}>Planificacion semanal y operativos especiales</div>
-          </div>
-          <button onClick={() => setShowModal(true)} disabled={creando}
-            style={{ padding: '9px 20px', borderRadius: 10, border: 'none', background: '#1a2744', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', marginTop: 4 }}>
-            {creando ? 'Creando...' : '+ Nueva OS'}
-          </button>
-        </div>
-
+      {/* Tabs activas / cumplidas */}
+      <div style={{ background: '#fff', padding: '0 40px', borderBottom: '0.5px solid #e5e5ea', flexShrink: 0 }}>
         <div style={{ display: 'flex', gap: 0 }}>
           {[
             { id: 'activas',   label: 'Activas',   count: activas.length },
             { id: 'cumplidas', label: 'Cumplidas', count: cumplidas.length },
           ].map(t => (
             <button key={t.id} onClick={() => setTab(t.id)}
-              style={{ padding: '10px 20px', border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 13, fontWeight: tab === t.id ? 700 : 400, color: tab === t.id ? '#1a2744' : '#8e8e93', borderBottom: tab === t.id ? '2px solid #1a2744' : '2px solid transparent', marginBottom: -1 }}>
+              style={{ padding: '12px 20px', border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 13, fontWeight: tab === t.id ? 700 : 400, color: tab === t.id ? '#1a2744' : '#8e8e93', borderBottom: tab === t.id ? '2px solid #1a2744' : '2px solid transparent', marginBottom: -1 }}>
               {t.label}
               {t.count > 0 && (
                 <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 700, background: tab === t.id ? '#1a2744' : '#e5e5ea', color: tab === t.id ? '#fff' : '#8e8e93', padding: '1px 7px', borderRadius: 10 }}>{t.count}</span>
@@ -367,11 +313,7 @@ export default function OrdenServicio() {
             )}
           </div>
         ) : (
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(420px, 1fr))',
-            gap: 12,
-          }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(420px, 1fr))', gap: 12 }}>
             {lista.map(os => (
               <CardOS key={os.id} os={os} onClick={() => {
                 if (os.tipo === 'adicional') { navigate(`/os-adicional/${os.id}`); return }
@@ -381,6 +323,6 @@ export default function OrdenServicio() {
           </div>
         )}
       </div>
-    </div>
+    </AppShell>
   )
 }

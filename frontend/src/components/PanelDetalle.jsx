@@ -372,11 +372,11 @@ export default function PanelDetalle({ mision, onClose, rol, onRefresh, isMobile
   // ── Desktop ───────────────────────────────────────────────────
   return (
     <>
-      <div style={{ width: 400, flexShrink: 0, padding: '12px 16px 12px 8px', background: '#f5f5f7', borderLeft: '0.5px solid #e5e5ea', display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-        <div style={{ background: '#fff', borderRadius: 18, border: '0.5px solid #e0e0e8', boxShadow: '0 4px 24px rgba(26,39,68,0.08)', display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+      <div style={{ width: 400, flexShrink: 0, padding: '12px 16px 12px 8px', background: '#eef1f6', borderLeft: '0.5px solid #e0e4ed', display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+        <div style={{ background: '#fff', borderRadius: 18, border: '0.5px solid #dde2ec', boxShadow: '0 4px 24px rgba(26,39,68,0.08)', display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
 
           {/* Header */}
-          <div style={{ padding: '16px 18px 14px', borderBottom: '0.5px solid #f2f2f7', flexShrink: 0 }}>
+          <div style={{ padding: '16px 18px 14px', borderBottom: '0.5px solid #e8ecf4', flexShrink: 0 }}>
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 5, flexWrap: 'wrap' }}>
@@ -394,9 +394,9 @@ export default function PanelDetalle({ mision, onClose, rol, onRefresh, isMobile
             </div>
           </div>
 
-          <div style={{ flex: 1, overflow: 'auto', padding: '14px 18px' }}>{contenido}</div>
+          <div style={{ flex: 1, overflow: 'auto', padding: '14px 18px', background: '#fff' }}>{contenido}</div>
 
-          <div style={{ padding: '12px 18px 16px', borderTop: '0.5px solid #f2f2f7', flexShrink: 0 }}>{acciones}</div>
+          <div style={{ padding: '12px 18px 16px', borderTop: '0.5px solid #e8ecf4', background: '#fff', flexShrink: 0 }}>{acciones}</div>
         </div>
       </div>
 

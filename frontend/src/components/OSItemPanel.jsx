@@ -1,11 +1,12 @@
 /**
- * OSItemPanel.jsx — v4
- * FIX agentes:
- * - handleSaved: espera GET completo antes de actualizar estado (no usa turnos viejos)
- * - EditPanel.guardar(): misiones TAMBIEN guardan en os_item_turnos
- * - ContadorAgentes: fallback correcto (cantidad_agentes || 1 solo si el campo es null/0)
+ * OSItemPanel.jsx — v5
+ * FIX v5:
+ * - MiniMapaPoligono y MiniMapaVista migrados a Leaflet (sin Google Maps)
+ * - Pin simple tambien migrado a Leaflet (reemplaza Static Maps API)
  */
 import { useEffect, useRef, useState } from 'react'
+import L from 'leaflet'
+import 'leaflet/dist/leaflet.css'
 import api from '../lib/api'
 import UbicacionInput from './UbicacionInput'
 
@@ -27,6 +28,34 @@ const EJES_PSV = [
   'Atencion y demandas ciudadanas',
   'Apoyo interinstitucional',
 ]
+
+function resolverOsFechas(os) {
+  if (!os) return []
+  // Si la OS tiene fechas explícitas en os_fechas, usarlas
+  const explicitas = (os.fechas || []).map(f => typeof f === 'string' ? f : f.fecha).filter(Boolean)
+  if (explicitas.length > 0) return explicitas
+  // Si no, generar el rango entre semana_inicio y semana_fin
+  if (os.semana_inicio && os.semana_fin) {
+    const fechas = []
+    const inicio = new Date(os.semana_inicio.slice(0, 10) + 'T00:00:00')
+    const fin    = new Date(os.semana_fin.slice(0, 10)    + 'T00:00:00')
+    const cur = new Date(inicio)
+    while (cur <= fin) {
+      fechas.push(cur.toISOString().slice(0, 10))
+      cur.setDate(cur.getDate() + 1)
+    }
+    return fechas
+  }
+  return []
+}
+
+function formatFecha(f) {
+  const [y, m, d] = f.split('-').map(Number)
+  const date = new Date(y, m - 1, d)
+  const dias  = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb']
+  const meses = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
+  return `${dias[date.getDay()]} ${d} ${meses[m - 1]}`
+}
 
 const FL  = { fontSize: 11, fontWeight: 700, color: '#aeaeb2', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }
 const INP = { width: '100%', background: '#f9f9fb', border: '0.5px solid #e5e5ea', borderRadius: 10, padding: '11px 14px', fontSize: 14, color: '#1d1d1f', fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' }
@@ -56,117 +85,63 @@ function modoIcon(item) {
   return '📍'
 }
 
-// ── CARD DE ITEM ──────────────────────────────────────────────
-function ItemCard({ item, selected, bases, onClick }) {
-  const esMision    = item.tipo === 'mision'
-  const accentColor = esMision ? '#e24b4a' : '#185fa5'
-  const accentBg    = esMision ? '#fce8e8' : '#e8f0fe'
-  const accentText  = esMision ? '#a32d2d' : '#0c447c'
-  const basePrincipal = bases?.find(b => b.id === item.turnos?.[0]?.base_id)
-  const ubic = ubicResumen(item)
-
-  return (
-    <div onClick={onClick}
-      style={{ background: selected ? '#f4f6ff' : '#fff', border: selected ? '1.5px solid #1a2744' : '0.5px solid #e5e5ea', borderLeft: `4px solid ${accentColor}`, borderRadius: 14, padding: '14px 16px', cursor: 'pointer', transition: 'box-shadow 0.15s' }}
-      onMouseEnter={e => { if (!selected) e.currentTarget.style.boxShadow = '0 2px 14px rgba(0,0,0,0.07)' }}
-      onMouseLeave={e => { e.currentTarget.style.boxShadow = 'none' }}>
-
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 7 }}>
-        <span style={{ fontSize: 10, fontWeight: 800, padding: '2px 8px', borderRadius: 5, background: accentBg, color: accentText, letterSpacing: '0.04em', flexShrink: 0 }}>
-          {esMision ? 'MISION' : 'SERVICIO'}
-        </span>
-        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-          {(item.turnos || []).map((t, i) => <TurnoPill key={i} turnoId={t.turno}/>)}
-        </div>
-      </div>
-
-      <div style={{ fontSize: 14, fontWeight: 700, color: '#1a2744', marginBottom: 8, lineHeight: 1.3 }}>
-        {item.descripcion || <span style={{ color: '#c7c7cc', fontStyle: 'italic' }}>Sin nombre</span>}
-      </div>
-
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px 12px' }}>
-        {ubic && (
-          <span style={{ fontSize: 12, color: '#636366', display: 'flex', alignItems: 'center', gap: 4 }}>
-            <span style={{ fontSize: 11 }}>{modoIcon(item)}</span>
-            <span style={{ maxWidth: 160, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{ubic}</span>
-          </span>
-        )}
-        {basePrincipal && (
-          <span style={{ fontSize: 12, color: '#636366', display: 'flex', alignItems: 'center', gap: 4 }}>
-            <span style={{ fontSize: 11 }}>🏢</span> {basePrincipal.nombre}
-          </span>
-        )}
-        {/* FIX: mostrar agentes desde turnos */}
-        {item.tipo === 'servicio' && (item.turnos || []).length > 0 && (
-          <span style={{ fontSize: 12, color: '#636366', display: 'flex', alignItems: 'center', gap: 4 }}>
-            <span style={{ fontSize: 11 }}>👥</span>
-            {(item.turnos || []).reduce((acc, e) => acc + (e.cantidad_agentes || 0), 0)} agentes
-          </span>
-        )}
-        {item.eje_psv && (
-          <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 7px', borderRadius: 5, background: '#f0f4ff', color: '#3451b2' }}>
-            {item.eje_psv}
-          </span>
-        )}
-        {item.lat && item.lng && (
-          <a href={`https://www.google.com/maps?q=${item.lat},${item.lng}`} target="_blank" rel="noreferrer"
-            onClick={e => e.stopPropagation()}
-            style={{ fontSize: 11, color: '#185fa5', fontWeight: 600, textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 3 }}>
-            Maps ↗
-          </a>
-        )}
-      </div>
-    </div>
-  )
-}
-
+// ── MINI MAPA LEAFLET — poligono o pin, sin Google Maps ───────
 function MiniMapaVista({ item, height = 180 }) {
-  const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY
-  const esPoligono = item.modo_ubicacion === 'poligono' &&
-    Array.isArray(item.poligono_coords) && item.poligono_coords.length >= 3
-  const tienePin = item.lat && item.lng
-
-  if (!esPoligono && !tienePin) return null
-  if (!apiKey) return null
-
-  // Poligonos: Google Maps JS interactivo (necesita DrawingManager y fitBounds)
-  if (esPoligono) return <MiniMapaPoligono item={item} height={height} />
-
-  // Pin simple: Static API — carga instantanea, sin JS
-  const src = `https://maps.googleapis.com/maps/api/staticmap?center=${item.lat},${item.lng}&zoom=17&size=600x${height * 2}&scale=2&markers=color:0x185fa5|${item.lat},${item.lng}&style=feature:poi|visibility:off&key=${apiKey}`
-  return (
-    <div style={{ borderRadius: 12, overflow: 'hidden', border: '0.5px solid #e5e5ea', marginBottom: 10, height, background: '#f5f5f7' }}>
-      <img src={src} alt="Ubicacion en mapa" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} loading="lazy" />
-    </div>
-  )
-}
-
-function MiniMapaPoligono({ item, height = 180 }) {
   const mapDivRef = useRef(null)
   const mapRef    = useRef(null)
-  const [ready, setReady] = useState(false)
+
+  const esPoligono = item.modo_ubicacion === 'poligono' &&
+    Array.isArray(item.poligono_coords) && item.poligono_coords.length >= 3
+  const tienePin   = !!(item.lat && item.lng)
 
   useEffect(() => {
-    if (window.google?.maps) { setReady(true); return }
-    const check = setInterval(() => { if (window.google?.maps) { setReady(true); clearInterval(check) } }, 300)
-    return () => clearInterval(check)
-  }, [])
+    if (!mapDivRef.current) return
+    if (!esPoligono && !tienePin) return
 
-  useEffect(() => {
-    if (!ready || !mapDivRef.current) return
+    // Crear mapa solo una vez
     if (!mapRef.current) {
-      mapRef.current = new window.google.maps.Map(mapDivRef.current, { disableDefaultUI: true, zoomControl: true, clickableIcons: false, mapTypeId: 'roadmap' })
+      mapRef.current = L.map(mapDivRef.current, {
+        zoomControl: true,
+        attributionControl: false,
+        scrollWheelZoom: false,
+        dragging: false,
+        doubleClickZoom: false,
+      })
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+      }).addTo(mapRef.current)
     }
-    new window.google.maps.Polygon({ paths: item.poligono_coords, fillColor: '#1a2744', fillOpacity: 0.18, strokeColor: '#1a2744', strokeWeight: 2, map: mapRef.current })
-    const bounds = new window.google.maps.LatLngBounds()
-    item.poligono_coords.forEach(p => bounds.extend(p))
-    mapRef.current.fitBounds(bounds)
-  }, [ready, item])
+
+    const map = mapRef.current
+
+    if (esPoligono) {
+      const latlngs = item.poligono_coords.map(p => [p.lat, p.lng])
+      const poly = L.polygon(latlngs, {
+        color: '#185fa5', fillColor: '#185fa5', fillOpacity: 0.18, weight: 2,
+      }).addTo(map)
+      map.fitBounds(poly.getBounds(), { padding: [16, 16] })
+    } else {
+      const icon = L.divIcon({
+        html: `<div style="width:20px;height:20px;border-radius:50%;background:#185fa5;border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.3)"></div>`,
+        className: '', iconSize: [20, 20], iconAnchor: [10, 10],
+      })
+      L.marker([item.lat, item.lng], { icon }).addTo(map)
+      map.setView([item.lat, item.lng], 16)
+    }
+
+    return () => {
+      if (mapRef.current) {
+        mapRef.current.remove()
+        mapRef.current = null
+      }
+    }
+  }, [item.id])
+
+  if (!esPoligono && !tienePin) return null
 
   return (
-    <div style={{ borderRadius: 12, overflow: 'hidden', border: '0.5px solid #e5e5ea', marginBottom: 10 }}>
-      {!ready && <div style={{ height, background: '#f5f5f7', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#aeaeb2', fontSize: 13 }}>Cargando mapa...</div>}
-      <div ref={mapDivRef} style={{ height, display: ready ? 'block' : 'none' }}/>
+    <div style={{ borderRadius: 12, overflow: 'hidden', border: '0.5px solid #e5e5ea', marginBottom: 10, height }}>
+      <div ref={mapDivRef} style={{ height: '100%', width: '100%' }}/>
     </div>
   )
 }
@@ -184,7 +159,6 @@ function Campo({ label, value, children }) {
 // ── PANEL VISTA ────────────────────────────────────────────────
 function ViewPanel({ item, bases, onEdit, onCancel }) {
   const esMision    = item.tipo === 'mision'
-  const accentColor = esMision ? '#e24b4a' : '#185fa5'
   const accentBg    = esMision ? '#fce8e8' : '#e8f0fe'
   const accentText  = esMision ? '#a32d2d' : '#0c447c'
   const ubic = ubicResumen(item)
@@ -224,7 +198,6 @@ function ViewPanel({ item, bases, onEdit, onCancel }) {
         )}
         <div style={{ height: '0.5px', background: '#f2f2f7', margin: '4px 0 18px' }}/>
 
-        {/* Cadena de turnos — FIX: muestra cantidad_agentes correctamente */}
         <div style={{ marginBottom: 18 }}>
           <div style={FL}>Cadena de turnos</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -261,6 +234,26 @@ function ViewPanel({ item, bases, onEdit, onCancel }) {
             </div>
           </Campo>
         )}
+
+        {item.fechas && item.fechas.length > 0 && (
+          <Campo label="Días de aplicación">
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px 7px' }}>
+              {item.fechas.map((f, i) => {
+                const fecha = typeof f === 'string' ? f : f.fecha
+                return (
+                  <span key={i} style={{ fontSize: 12, fontWeight: 700, padding: '4px 11px', borderRadius: 20, background: '#e8f0fe', color: '#0c447c', border: '1px solid #185fa533' }}>
+                    {formatFecha(fecha)}
+                  </span>
+                )
+              })}
+            </div>
+          </Campo>
+        )}
+        {(!item.fechas || item.fechas.length === 0) && (
+          <Campo label="Días de aplicación">
+            <span style={{ fontSize: 13, color: '#aeaeb2', fontStyle: 'italic' }}>Todos los días de la OS</span>
+          </Campo>
+        )}
       </div>
 
       <div style={{ padding: '14px 24px 18px', borderTop: '0.5px solid #f2f2f7', flexShrink: 0 }}>
@@ -275,14 +268,13 @@ function ViewPanel({ item, bases, onEdit, onCancel }) {
 }
 
 // ── CONTADOR DE AGENTES ───────────────────────────────────────
-// FIX: usa cantidad_agentes directamente (es integer, no necesita fallback a 1 salvo null)
 function ContadorAgentes({ items }) {
   const porTurno = {}
   items.forEach(item => {
     if (item.tipo !== 'servicio') return
     ;(item.turnos || []).forEach(eslabon => {
       const t  = eslabon.turno
-      const ag = eslabon.cantidad_agentes || 0  // 0 si no tiene configurado
+      const ag = eslabon.cantidad_agentes || 0
       if (!t || ag === 0) return
       porTurno[t] = (porTurno[t] || 0) + ag
     })
@@ -359,8 +351,72 @@ function Eslabon({ eslabon, orden, total, bases, onChange, onDelete, relevoPrevi
   )
 }
 
+// ── SELECTOR DE FECHAS ────────────────────────────────────────
+function SelectorFechas({ osFechas, fechasItem, setFechasItem }) {
+  const todosSeleccionados = fechasItem.length === 0
+
+  if (!osFechas || osFechas.length === 0) return (
+    <div style={{ marginBottom: 18 }}>
+      <div style={FL}>Días de aplicación</div>
+      <div style={{ fontSize: 12, color: '#854f0b', padding: '10px 14px', background: '#fdf3e3', borderRadius: 10, border: '1px solid #f5c84244', display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+        <span style={{ fontSize: 15, flexShrink: 0 }}>⚠️</span>
+        <span>La OS no tiene fechas cargadas. Sin fechas, este item aplica todos los días. Podés agregar fechas desde la pantalla principal de la OS.</span>
+      </div>
+    </div>
+  )
+
+  function toggle(f) {
+    setFechasItem(prev => {
+      if (prev.includes(f)) {
+        const next = prev.filter(x => x !== f)
+        return next
+      }
+      return [...prev, f].sort()
+    })
+  }
+
+  return (
+    <div style={{ marginBottom: 18 }}>
+      <div style={FL}>Días de aplicación</div>
+      <div style={{ fontSize: 12, color: '#8e8e93', marginBottom: 10, lineHeight: 1.5 }}>
+        Seleccioná los días en que se cumple este item. Sin selección = todos los días de la OS.
+      </div>
+
+      <button
+        onClick={() => setFechasItem([])}
+        style={{
+          display: 'inline-flex', alignItems: 'center', gap: 5,
+          padding: '5px 12px', borderRadius: 20, border: 'none', cursor: 'pointer', marginBottom: 10,
+          fontSize: 12, fontWeight: 700,
+          background: todosSeleccionados ? '#1a2744' : '#f2f2f7',
+          color:      todosSeleccionados ? '#fff'     : '#8e8e93',
+        }}>
+        {todosSeleccionados && <span>✓ </span>}Todos los días
+      </button>
+
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 8px' }}>
+        {osFechas.map(f => {
+          const sel = fechasItem.includes(f)
+          return (
+            <button key={f} onClick={() => toggle(f)}
+              style={{
+                padding: '5px 12px', borderRadius: 20, border: 'none', cursor: 'pointer',
+                fontSize: 12, fontWeight: 700,
+                background: sel ? '#e8f0fe' : '#f2f2f7',
+                color:      sel ? '#0c447c' : '#8e8e93',
+                outline:    sel ? '1.5px solid #185fa5' : 'none',
+              }}>
+              {formatFecha(f)}
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 // ── PANEL EDICION ─────────────────────────────────────────────
-function EditPanel({ item, osId, bases, onSaved, onCancel }) {
+function EditPanel({ item, osId, bases, osFechas = [], onSaved, onCancel }) {
   const esNuevo  = !item || item._local
   const tipoInit = item?.tipo || 'servicio'
 
@@ -380,7 +436,8 @@ function EditPanel({ item, osId, bases, onSaved, onCancel }) {
   const [relevos, setRelevos] = useState(
     item?.relevos?.length > 0 ? item.relevos.map(r => r.tipo) : []
   )
-  const [saving, setSaving] = useState(false)
+  const [saving,     setSaving]     = useState(false)
+  const [fechasItem, setFechasItem] = useState(item?.fechas?.map(f => typeof f === 'string' ? f : f.fecha) || [])
 
   function upd(k, v) { setForm(f => ({ ...f, [k]: v })) }
   function addTurno() { setTurnos(t => [...t, { turno: 'manana', base_id: '', cantidad_agentes: 1 }]); setRelevos(r => [...r, 'Normal']) }
@@ -411,12 +468,16 @@ function EditPanel({ item, osId, bases, onSaved, onCancel }) {
         ? await api.post(`/api/os/${osId}/items`, payload)
         : await api.put(`/api/os/items/${item.id}`, payload)
 
-      // FIX: guardar turnos SIEMPRE (tanto servicios como misiones)
-      // Para misiones: un solo eslabon con turno y base, sin cantidad de agentes (la define el jefe)
       await api.post(`/api/os/items/${saved.id}/turnos`, {
         turnos: turnos.map((t, i) => ({ ...t, orden: i })),
         relevos: relevos.map((tipo, i) => ({ orden: i, tipo })),
       })
+
+      try {
+        await api.put(`/api/os/items/${saved.id}/fechas`, { fechas: fechasItem })
+      } catch (eFechas) {
+        console.warn('No se pudieron guardar las fechas del item:', eFechas)
+      }
 
       onSaved(saved)
     } catch (e) {
@@ -474,6 +535,8 @@ function EditPanel({ item, osId, bases, onSaved, onCancel }) {
             {EJES_PSV.map(e => <option key={e}>{e}</option>)}
           </select>
         </div>
+
+        <SelectorFechas osFechas={osFechas} fechasItem={fechasItem} setFechasItem={setFechasItem}/>
 
         <div style={{ height: '0.5px', background: '#f2f2f7', margin: '4px 0 18px' }}/>
 
@@ -555,6 +618,74 @@ function EditPanel({ item, osId, bases, onSaved, onCancel }) {
   )
 }
 
+// ── CARD DE ITEM ──────────────────────────────────────────────
+function ItemCard({ item, selected, bases, onClick }) {
+  const esMision    = item.tipo === 'mision'
+  const accentColor = esMision ? '#e24b4a' : '#185fa5'
+  const accentBg    = esMision ? '#fce8e8' : '#e8f0fe'
+  const accentText  = esMision ? '#a32d2d' : '#0c447c'
+  const basePrincipal = bases?.find(b => b.id === item.turnos?.[0]?.base_id)
+  const ubic = ubicResumen(item)
+
+  return (
+    <div onClick={onClick}
+      style={{ background: selected ? '#f4f6ff' : '#fff', border: selected ? '1.5px solid #1a2744' : '0.5px solid #e5e5ea', borderLeft: `4px solid ${accentColor}`, borderRadius: 14, padding: '14px 16px', cursor: 'pointer', transition: 'box-shadow 0.15s' }}
+      onMouseEnter={e => { if (!selected) e.currentTarget.style.boxShadow = '0 2px 14px rgba(0,0,0,0.07)' }}
+      onMouseLeave={e => { e.currentTarget.style.boxShadow = 'none' }}>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 7 }}>
+        <span style={{ fontSize: 10, fontWeight: 800, padding: '2px 8px', borderRadius: 5, background: accentBg, color: accentText, letterSpacing: '0.04em', flexShrink: 0 }}>
+          {esMision ? 'MISION' : 'SERVICIO'}
+        </span>
+        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+          {(item.turnos || []).map((t, i) => <TurnoPill key={i} turnoId={t.turno}/>)}
+        </div>
+      </div>
+
+      <div style={{ fontSize: 14, fontWeight: 700, color: '#1a2744', marginBottom: 8, lineHeight: 1.3 }}>
+        {item.descripcion || <span style={{ color: '#c7c7cc', fontStyle: 'italic' }}>Sin nombre</span>}
+      </div>
+
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px 12px' }}>
+        {ubic && (
+          <span style={{ fontSize: 12, color: '#636366', display: 'flex', alignItems: 'center', gap: 4 }}>
+            <span style={{ fontSize: 11 }}>{modoIcon(item)}</span>
+            <span style={{ maxWidth: 160, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{ubic}</span>
+          </span>
+        )}
+        {basePrincipal && (
+          <span style={{ fontSize: 12, color: '#636366', display: 'flex', alignItems: 'center', gap: 4 }}>
+            <span style={{ fontSize: 11 }}>🏢</span> {basePrincipal.nombre}
+          </span>
+        )}
+        {item.tipo === 'servicio' && (item.turnos || []).length > 0 && (
+          <span style={{ fontSize: 12, color: '#636366', display: 'flex', alignItems: 'center', gap: 4 }}>
+            <span style={{ fontSize: 11 }}>👥</span>
+            {(item.turnos || []).reduce((acc, e) => acc + (e.cantidad_agentes || 0), 0)} agentes
+          </span>
+        )}
+        {item.eje_psv && (
+          <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 7px', borderRadius: 5, background: '#f0f4ff', color: '#3451b2' }}>
+            {item.eje_psv}
+          </span>
+        )}
+        {item.lat && item.lng && (
+          <a href={`https://www.google.com/maps?q=${item.lat},${item.lng}`} target="_blank" rel="noreferrer"
+            onClick={e => e.stopPropagation()}
+            style={{ fontSize: 11, color: '#185fa5', fontWeight: 600, textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 3 }}>
+            Maps ↗
+          </a>
+        )}
+        {item.fechas && item.fechas.length > 0 && (
+          <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 7px', borderRadius: 5, background: '#e8f0fe', color: '#0c447c', display: 'flex', alignItems: 'center', gap: 3 }}>
+            📅 {item.fechas.length} día{item.fechas.length !== 1 ? 's' : ''}
+          </span>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── COMPONENTE PRINCIPAL ──────────────────────────────────────
 export default function OSItemPanel({ os, items: itemsInit, onItemsChange, readOnly }) {
   const [items,    setItems]    = useState(itemsInit || [])
@@ -569,19 +700,15 @@ export default function OSItemPanel({ os, items: itemsInit, onItemsChange, readO
   const itemSeleccionado = selected ? items.find(i => i.id === selected) : null
   const panelAbierto = selected !== null || newTab !== null
 
-  // FIX: handleSaved hace el GET primero y actualiza con datos frescos incluyendo turnos
   async function handleSaved(savedItem) {
     try {
       const full = await api.get(`/api/os/items/${savedItem.id}`)
       setItems(prev => {
         const existe = prev.find(i => i.id === full.id)
-        return existe
-          ? prev.map(i => i.id === full.id ? full : i)
-          : [...prev, full]
+        return existe ? prev.map(i => i.id === full.id ? full : i) : [...prev, full]
       })
       setSelected(full.id)
     } catch {
-      // Fallback: usar el item guardado sin turnos y forzar refresh general
       setItems(prev => {
         const existe = prev.find(i => i.id === savedItem.id)
         return existe
@@ -670,11 +797,11 @@ export default function OSItemPanel({ os, items: itemsInit, onItemsChange, readO
       {panelAbierto && !readOnly && (
         <div style={{ width: 440, flexShrink: 0, paddingBottom: 20 }}>
           {newTab && (
-            <EditPanel key={'new-' + newTab} item={{ tipo: newTab, _local: true }} osId={os.id} bases={bases} onSaved={handleSaved} onCancel={handleClose}/>
+            <EditPanel key={'new-' + newTab} item={{ tipo: newTab, _local: true }} osId={os.id} bases={bases} osFechas={resolverOsFechas(os)} onSaved={handleSaved} onCancel={handleClose}/>
           )}
           {!newTab && itemSeleccionado && (
             editMode ? (
-              <EditPanel key={itemSeleccionado.id + '-edit'} item={itemSeleccionado} osId={os.id} bases={bases} onSaved={handleSaved} onCancel={() => setEditMode(false)}/>
+              <EditPanel key={itemSeleccionado.id + '-edit'} item={itemSeleccionado} osId={os.id} bases={bases} osFechas={resolverOsFechas(os)} onSaved={handleSaved} onCancel={() => setEditMode(false)}/>
             ) : (
               <ViewPanel key={itemSeleccionado.id + '-view'} item={itemSeleccionado} bases={bases} onEdit={() => setEditMode(true)} onCancel={handleClose}/>
             )

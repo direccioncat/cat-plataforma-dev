@@ -5,6 +5,8 @@
  */
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import L from 'leaflet'
+import 'leaflet/dist/leaflet.css'
 import api from '../lib/api'
 
 const TURNOS_DEF = [
@@ -257,7 +259,8 @@ function TabAlertas({ items }) {
 }
 
 // ── MAPA CORE ─────────────────────────────────────────────────
-// FIX v9:
+// FIX v9 + leaflet npm:
+// - Usa L del import de npm en vez de CDN
 // - Tooltips de comunas: sticky:true elimina leader lines
 // - poligono_coords: parseado defensivamente con parsePoligonoCoords()
 function MapaCore({ items, height, filtroTipo, filtroTurno, comunasVisible }) {
@@ -265,7 +268,6 @@ function MapaCore({ items, height, filtroTipo, filtroTurno, comunasVisible }) {
   const mapObjRef       = useRef(null)
   const capasRef        = useRef([])
   const comunasLayerRef = useRef(null)
-  const [leafletOk, setLeafletOk] = useState(!!window.L)
 
   // Normalizar items: parsear poligono_coords si llega como string
   const itemsNorm = items.map(it => {
@@ -282,14 +284,7 @@ function MapaCore({ items, height, filtroTipo, filtroTurno, comunasVisible }) {
   })
 
   useEffect(() => {
-    if (window.L) { setLeafletOk(true); return }
-    const link = document.createElement('link'); link.rel='stylesheet'; link.href='https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'; document.head.appendChild(link)
-    const script = document.createElement('script'); script.src='https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'; script.onload=()=>setLeafletOk(true); document.head.appendChild(script)
-  }, [])
-
-  useEffect(() => {
-    if (!leafletOk || !mapRef.current || mapObjRef.current) return
-    const L = window.L
+    if (!mapRef.current || mapObjRef.current) return
     const map = L.map(mapRef.current, { zoomControl: true, preferCanvas: false })
     mapObjRef.current = map
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap', maxZoom: 19 }).addTo(map)
@@ -302,11 +297,10 @@ function MapaCore({ items, height, filtroTipo, filtroTurno, comunasVisible }) {
     }).addTo(map)
     map.setView([-34.615, -58.443], 12)
     return () => { if (mapObjRef.current) { mapObjRef.current.remove(); mapObjRef.current = null; comunasLayerRef.current = null } }
-  }, [leafletOk])
+  }, [])
 
   useEffect(() => {
-    const map = mapObjRef.current; if (!map || !window.L) return
-    const L = window.L
+    const map = mapObjRef.current; if (!map) return
     capasRef.current.forEach(c => map.removeLayer(c)); capasRef.current = []
     const filtrados = itemsMapaables.filter(it => {
       if (filtroTipo !== 'todos' && it.tipo !== filtroTipo) return false
@@ -364,7 +358,7 @@ function MapaCore({ items, height, filtroTipo, filtroTurno, comunasVisible }) {
     })
     if (bounds.length === 1) map.setView(bounds[0], 16)
     else if (bounds.length > 1) map.fitBounds(bounds, { padding: [50, 50] })
-  }, [leafletOk, filtroTipo, filtroTurno, itemsMapaables.length])
+  }, [filtroTipo, filtroTurno, itemsMapaables.length])
 
   useEffect(() => {
     const map=mapObjRef.current; const layer=comunasLayerRef.current; if (!map||!layer) return
@@ -375,7 +369,6 @@ function MapaCore({ items, height, filtroTipo, filtroTurno, comunasVisible }) {
     if (mapObjRef.current) setTimeout(() => mapObjRef.current?.invalidateSize(), 80)
   }, [height])
 
-  if (!leafletOk) return <div style={{ height, background: '#f5f5f7', borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8e8e93', fontSize: 13 }}>Cargando mapa...</div>
   if (itemsMapaables.length === 0) return (
     <div style={{ height, background: '#f5f5f7', borderRadius: 12, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, color: '#aeaeb2' }}>
       <div style={{ fontSize: 32 }}>🗺</div>

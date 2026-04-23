@@ -9,7 +9,11 @@ export function useSocket(base_id) {
   useEffect(() => {
     if (!base_id) return
 
-    const socket = io(API_URL, { transports: ['websocket'] })
+    const token = sessionStorage.getItem('cat_token')
+    const socket = io(API_URL, {
+      transports: ['websocket'],
+      auth: { token },          // JWT requerido por el middleware de Socket.io
+    })
     socketRef.current = socket
 
     socket.on('connect', () => {

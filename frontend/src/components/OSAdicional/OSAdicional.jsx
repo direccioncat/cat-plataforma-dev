@@ -1,9 +1,12 @@
 /**
- * OSAdicional.jsx — v9
- * + Pasa recursos al BtnReporteOSAdicional para el PDF
+ * OSAdicional.jsx — v10
+ * + Flujo de validación: borrador → validacion → validada / rechazada → cumplida
+ * + Botones Validar/Rechazar para jefe_cgm, gerencia, director, admin
+ * + Modal de rechazo con observación
  */
 import { useState, useEffect, useCallback, useRef } from 'react'
 import api from '../../lib/api'
+import { useAuth } from '../../context/AuthContext'
 import { useOSAdicional } from './useOSAdicional'
 import SidebarFases from './SidebarFases'
 import MapaAdicional from './MapaAdicional'
@@ -11,13 +14,14 @@ import { ToolbarMapa, LeyendaMapa } from './ToolbarMapa'
 import { BtnReporteOSAdicional } from './ReporteOSAdicional'
 
 const ESTADOS = {
-  borrador:   { label: 'Borrador',   color: '#854f0b', bg: '#faeeda' },
-  validacion: { label: 'Validacion', color: '#534ab7', bg: '#eeedf8' },
-  vigente:    { label: 'Vigente',    color: '#0f6e56', bg: '#e8faf2' },
-  cumplida:   { label: 'Cumplida',   color: '#8e8e93', bg: '#f5f5f7' },
+  borrador:   { label: 'Borrador',    color: '#854f0b', bg: '#faeeda' },
+  validacion: { label: 'En validación', color: '#534ab7', bg: '#eeedf8' },
+  validada:   { label: 'Validada',    color: '#0f6e56', bg: '#e8faf2' },
+  rechazada:  { label: 'Rechazada',   color: '#c0392b', bg: '#fff0f0' },
+  cumplida:   { label: 'Cumplida',    color: '#8e8e93', bg: '#f5f5f7' },
 }
-const TRANSICIONES       = { borrador: 'validacion', validacion: 'vigente', vigente: 'cumplida' }
-const TRANSICIONES_LABEL = { validacion: 'Enviar a validacion', vigente: 'Publicar', cumplida: 'Marcar cumplida' }
+
+const ROLES_VALIDAR = ['admin', 'director', 'gerencia', 'jefe_cgm']
 
 function fmtHora(h) {
   if (!h) return null
@@ -34,6 +38,7 @@ function fmtFechas(fechas) {
   return `${fmt(fechas[0])} · ${fmt(fechas[1])} · +${fechas.length - 2} mas`
 }
 
+// ── Título editable ───────────────────────────────────────────
 function TituloEditable({ valor, onGuardar, readOnly }) {
   const [editando, setEditando] = useState(false)
   const [texto,    setTexto]    = useState(valor)
@@ -64,6 +69,7 @@ function TituloEditable({ valor, onGuardar, readOnly }) {
   )
 }
 
+// ── Modal editar datos básicos ────────────────────────────────
 function ModalEditar({ os, onGuardar, onCancelar }) {
   const [nombre,       setNombre]       = useState(os?.nombre || '')
   const [eventoMotivo, setEventoMotivo] = useState(os?.evento_motivo || '')
@@ -93,17 +99,99 @@ function ModalEditar({ os, onGuardar, onCancelar }) {
   )
 }
 
-export default function OSAdicional({ osId: osIdProp, fechasIniciales = [], onVolver }) {
-  const hook = useOSAdicional(null)
-  const { os, fases, recursos, cargar, actualizarCabecera, cambiarEstado, crearFase, eliminarFase, crearElemento, actualizarElemento, eliminarElemento, actualizarRecursos, setOS, setFases, setRecursos } = hook
+// ── Modal rechazo ─────────────────────────────────────────────
+function ModalRechazo({ onConfirmar, onCancelar, cargando }) {
+  const [obs, setObs] = useState('')
+  return (
+    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.35)', zIndex:400, display:'flex', alignItems:'center', justifyContent:'center', backdropFilter:'blur(3px)' }}>
+      <div style={{ background:'#fff', borderRadius:20, padding:'28px', width:400, boxShadow:'0 20px 60px rgba(0,0,0,0.18)' }}>
+        <div style={{ fontSize:16, fontWeight:700, color:'#c0392b', marginBottom:6 }}>Rechazar OS adicional</div>
+        <div style={{ fontSize:13, color:'#636366', marginBottom:20 }}>
+          La OS volverá al área operativa. Podés agregar una observación para indicar qué corregir.
+        </div>
+        <textarea
+          value={obs}
+          onChange={e => setObs(e.target.value)}
+          placeholder="Motivo del rechazo (opcional)..."
+          rows={3}
+          style={{ width:'100%', background:'#f5f5f7', border:'none', borderRadius:10, padding:'10px 12px', fontSize:13, color:'#1d1d1f', fontFamily:'inherit', outline:'none', resize:'vertical', boxSizing:'border-box', marginBottom:20 }}
+        />
+        <div style={{ display:'flex', gap:9 }}>
+          <button onClick={onCancelar} disabled={cargando}
+            style={{ flex:1, padding:'11px', borderRadius:12, border:'none', background:'#f5f5f7', color:'#636366', fontSize:13, fontWeight:600, cursor:'pointer' }}>
+            Cancelar
+          </button>
+          <button onClick={() => onConfirmar(obs)} disabled={cargando}
+            style={{ flex:2, padding:'11px', borderRadius:12, border:'none', background:'#c0392b', color:'#fff', fontSize:13, fontWeight:700, cursor:cargando?'not-allowed':'pointer', opacity:cargando?0.7:1 }}>
+            {cargando ? 'Rechazando...' : 'Confirmar rechazo'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
 
-  const [cargando,    setCargando]    = useState(true)
-  const [creando,     setCreando]     = useState(false)
-  const [modalEditar, setModalEditar] = useState(false)
-  const [herramienta, setHerramienta] = useState('mover')
-  const [faseActiva,  setFaseActiva]  = useState(null)
-  const [filtroFase,  setFiltroFase]  = useState('todas')
-  const [elActivo,    setElActivo]    = useState(null)
+// ── Banner de estado para validación/rechazo ──────────────────
+function BannerEstado({ os }) {
+  if (!os) return null
+
+  if (os.estado === 'validacion') {
+    return (
+      <div style={{ background:'#eeedf8', borderBottom:'0.5px solid #c8c5ef', padding:'8px 16px', display:'flex', alignItems:'center', gap:8, fontSize:12, color:'#534ab7' }}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+        </svg>
+        <span><strong>Pendiente de validación.</strong> Esta OS está siendo revisada por la jefatura.</span>
+      </div>
+    )
+  }
+
+  if (os.estado === 'rechazada') {
+    return (
+      <div style={{ background:'#fff0f0', borderBottom:'0.5px solid #f5c0c0', padding:'8px 16px', display:'flex', alignItems:'center', gap:8, fontSize:12, color:'#c0392b' }}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>
+        </svg>
+        <span>
+          <strong>OS rechazada.</strong>
+          {os.obs_rechazo ? ` Motivo: ${os.obs_rechazo}` : ' Sin observación.'}
+          {' '}Corregí y volvé a enviar a validación.
+        </span>
+      </div>
+    )
+  }
+
+  if (os.estado === 'validada') {
+    return (
+      <div style={{ background:'#e8faf2', borderBottom:'0.5px solid #b0e8d0', padding:'8px 16px', display:'flex', alignItems:'center', gap:8, fontSize:12, color:'#0f6e56' }}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
+        </svg>
+        <span><strong>OS validada.</strong> Ya fue remitida al módulo de Servicios Adicionales.</span>
+      </div>
+    )
+  }
+
+  return null
+}
+
+// ── Componente principal ──────────────────────────────────────
+export default function OSAdicional({ osId: osIdProp, fechasIniciales = [], onVolver }) {
+  const { profile } = useAuth()
+  const hook = useOSAdicional(null)
+  const { os, turnos, fases, recursos, cargar, actualizarCabecera, cambiarEstado, crearTurno, editarTurno, eliminarTurno, crearFase, eliminarFase, duplicarFase, moverFase, crearElemento, actualizarElemento, eliminarElemento, actualizarRecursos, setOS, setFases, setRecursos } = hook
+
+  const [cargando,      setCargando]      = useState(true)
+  const [creando,       setCreando]       = useState(false)
+  const [modalEditar,   setModalEditar]   = useState(false)
+  const [modalRechazo,  setModalRechazo]  = useState(false)
+  const [accionando,    setAccionando]    = useState(false)
+  const [herramienta,   setHerramienta]   = useState('mover')
+  const [faseActiva,    setFaseActiva]    = useState(null)
+  const [filtroFase,    setFiltroFase]    = useState('todas')
+  const [elActivo,      setElActivo]      = useState(null)
+
+  const rol = profile?.role
 
   useEffect(() => {
     if (!osIdProp) { setCargando(false); return }
@@ -137,8 +225,49 @@ export default function OSAdicional({ osId: osIdProp, fechasIniciales = [], onVo
     } catch (e) { console.error(e) }
   }
 
-  async function handleActualizarDotacion(form) {
-    await actualizarCabecera(form)
+  // Enviar a validación (borrador → validacion)
+  async function handleEnviarValidacion() {
+    if (!window.confirm('¿Enviar esta OS a validación? No podrás editarla hasta que sea revisada.')) return
+    setAccionando(true)
+    try {
+      const updated = await api.post(`/api/os-adicional/${os.id}/enviar-validacion`, {})
+      setOS(prev => ({ ...prev, estado: updated.estado }))
+    } catch (e) { alert(e.message) }
+    finally { setAccionando(false) }
+  }
+
+  // Validar (validacion → validada) — solo ROLES_VALIDAR
+  async function handleValidar() {
+    if (!window.confirm('¿Validar esta OS adicional? Se creará automáticamente en el módulo de Servicios Adicionales.')) return
+    setAccionando(true)
+    try {
+      const { os: updated } = await api.post(`/api/os-adicional/${os.id}/validar`, {})
+      setOS(prev => ({ ...prev, ...updated }))
+    } catch (e) { alert(e.message) }
+    finally { setAccionando(false) }
+  }
+
+  // Rechazar (validacion → rechazada) — solo ROLES_VALIDAR
+  async function handleRechazar(obs) {
+    setAccionando(true)
+    try {
+      const updated = await api.post(`/api/os-adicional/${os.id}/rechazar`, { obs_rechazo: obs })
+      setOS(prev => ({ ...prev, estado: updated.estado, obs_rechazo: updated.obs_rechazo }))
+      setModalRechazo(false)
+    } catch (e) { alert(e.message) }
+    finally { setAccionando(false) }
+  }
+
+  // Re-enviar a validación desde rechazada (rechazada → validacion)
+  async function handleReenviarValidacion() {
+    if (!window.confirm('¿Volver a enviar esta OS a validación?')) return
+    setAccionando(true)
+    try {
+      // Usamos el endpoint legacy /estado para el caso rechazada → validacion
+      const updated = await api.post(`/api/os-adicional/${os.id}/estado`, { estado: 'validacion' })
+      setOS(prev => ({ ...prev, estado: updated.estado }))
+    } catch (e) { alert(e.message) }
+    finally { setAccionando(false) }
   }
 
   const handleElementoCreado = useCallback(async (faseId, { tipo, geometria }) => {
@@ -165,12 +294,61 @@ export default function OSAdicional({ osId: osIdProp, fechasIniciales = [], onVo
     )
   }
 
-  const estadoInfo    = ESTADOS[os?.estado || 'borrador']
-  const sigEstado     = TRANSICIONES[os?.estado]
-  const sigLabel      = TRANSICIONES_LABEL[sigEstado]
-  const readOnly      = os?.estado === 'cumplida'
+  const estadoInfo = ESTADOS[os?.estado || 'borrador']
+  const estado     = os?.estado
+  const esValidador = ROLES_VALIDAR.includes(rol)
+
+  // readOnly: no se puede editar si está en validacion, validada o cumplida
+  const readOnly = ['validacion', 'validada', 'cumplida'].includes(estado)
+
   const fechasOS      = os?.fechas || []
   const fechasMostrar = fechasOS.length ? fechasOS : fechasIniciales
+
+  // ── Botones de acción según estado y rol ─────────────────────
+  function renderBotonesAccion() {
+    if (!os?.id || accionando) {
+      return accionando
+        ? <span style={{ fontSize:12, color:'#aeaeb2' }}>Guardando...</span>
+        : null
+    }
+
+    // Quien creó / rol operativo: puede enviar a validación o re-enviar
+    if (estado === 'borrador') {
+      return (
+        <button onClick={handleEnviarValidacion}
+          style={{ padding:'6px 14px', borderRadius:8, border:'none', background:'#534ab7', color:'#fff', fontSize:12, fontWeight:700, cursor:'pointer' }}>
+          Enviar a validación →
+        </button>
+      )
+    }
+
+    if (estado === 'rechazada') {
+      return (
+        <button onClick={handleReenviarValidacion}
+          style={{ padding:'6px 14px', borderRadius:8, border:'none', background:'#534ab7', color:'#fff', fontSize:12, fontWeight:700, cursor:'pointer' }}>
+          Re-enviar a validación →
+        </button>
+      )
+    }
+
+    // Validadores: pueden aprobar o rechazar cuando está en validacion
+    if (estado === 'validacion' && esValidador) {
+      return (
+        <>
+          <button onClick={() => setModalRechazo(true)}
+            style={{ padding:'6px 14px', borderRadius:8, border:'1.5px solid #c0392b', background:'#fff', color:'#c0392b', fontSize:12, fontWeight:700, cursor:'pointer' }}>
+            Rechazar
+          </button>
+          <button onClick={handleValidar}
+            style={{ padding:'6px 14px', borderRadius:8, border:'none', background:'#0f6e56', color:'#fff', fontSize:12, fontWeight:700, cursor:'pointer' }}>
+            ✓ Validar OS
+          </button>
+        </>
+      )
+    }
+
+    return null
+  }
 
   return (
     <div style={{ display:'flex', flexDirection:'column', height:'100%', overflow:'hidden', background:'#f5f5f7' }}>
@@ -210,29 +388,31 @@ export default function OSAdicional({ osId: osIdProp, fechasIniciales = [], onVo
               Editar
             </button>
           )}
-          {/* PDF — pasa os, fases Y recursos */}
           {os?.id && <BtnReporteOSAdicional os={os} fases={fases} recursos={recursos}/>}
-          {os?.id && !readOnly && sigEstado && (
-            <button onClick={() => { if (window.confirm(`Cambiar a "${sigLabel}"?`)) cambiarEstado(sigEstado) }}
-              style={{ padding:'6px 14px', borderRadius:8, border:'none', background:'#1a2744', color:'#fff', fontSize:12, fontWeight:700, cursor:'pointer' }}>
-              {sigLabel}
-            </button>
-          )}
+          {renderBotonesAccion()}
         </div>
       </div>
+
+      {/* BANNER de estado */}
+      <BannerEstado os={os} />
 
       {/* BODY */}
       <div style={{ flex:1, display:'flex', overflow:'hidden' }}>
         <SidebarFases
-          os={os} fases={fases} recursos={recursos} fechas={fechasOS}
+          os={os} turnos={turnos} fases={fases} recursos={recursos} fechas={fechasOS}
           faseActiva={faseActiva} elementoActivo={elActivo}
           onActivarFase={setFaseActiva}
           onElementoClick={handleElementoClick}
           onEliminarElemento={handleEliminarElemento}
           onCrearFase={crearFase} onEliminarFase={eliminarFase}
           onActualizarFase={handleActualizarFase}
+          onCrearTurno={crearTurno}
+          onEditarTurno={editarTurno}
+          onEliminarTurno={eliminarTurno}
+          onDuplicarFase={duplicarFase}
+          onMoverFase={moverFase}
           onRecursosChange={actualizarRecursos}
-          onActualizarDotacion={handleActualizarDotacion}
+          onActualizarDotacion={actualizarCabecera}
           readOnly={readOnly}
         />
         <div style={{ flex:1, position:'relative', overflow:'hidden' }}>
@@ -250,6 +430,13 @@ export default function OSAdicional({ osId: osIdProp, fechasIniciales = [], onVo
 
       {modalEditar && (
         <ModalEditar os={os} onGuardar={handleGuardarEditar} onCancelar={() => setModalEditar(false)}/>
+      )}
+      {modalRechazo && (
+        <ModalRechazo
+          onConfirmar={handleRechazar}
+          onCancelar={() => setModalRechazo(false)}
+          cargando={accionando}
+        />
       )}
     </div>
   )

@@ -166,6 +166,16 @@ async function migrate() {
     console.log('✓ refresh_tokens');
 
     await client.query(`
+      CREATE TABLE IF NOT EXISTS revoked_tokens (
+        jti UUID PRIMARY KEY,
+        expires_at TIMESTAMPTZ NOT NULL,
+        revoked_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_revoked_tokens_expires ON revoked_tokens(expires_at);
+    `);
+    console.log('✓ revoked_tokens');
+
+    await client.query(`
       CREATE TABLE IF NOT EXISTS os_fechas (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         os_id UUID REFERENCES ordenes_servicio(id) ON DELETE CASCADE NOT NULL,
@@ -209,6 +219,18 @@ async function migrate() {
       );
     `);
     console.log('✓ os_alcoholemia_accesos');
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS os_item_fechas (
+        id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        os_item_id UUID REFERENCES os_items(id) ON DELETE CASCADE NOT NULL,
+        fecha      DATE NOT NULL,
+        UNIQUE(os_item_id, fecha)
+      );
+      CREATE INDEX IF NOT EXISTS idx_os_item_fechas_item  ON os_item_fechas(os_item_id);
+      CREATE INDEX IF NOT EXISTS idx_os_item_fechas_fecha ON os_item_fechas(fecha);
+    `);
+    console.log('✓ os_item_fechas');
 
     console.log('\n✅ Migración completada exitosamente.');
   } catch (err) {

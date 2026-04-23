@@ -1,17 +1,19 @@
 /**
  * UbicacionInput.jsx
- * Campo único de búsqueda + polígono con mapa interactivo.
+ * Campo unico de busqueda + poligono con mapa interactivo.
  *
  * ENTRE CALLES: el dropdown aparece cuando el texto tiene formato completo.
  * Georef entiende: "Corrientes entre Callao y Uruguay"
  * Para el autocompletado parcial usamos el endpoint /calles para sugerir calles.
  *
- * POLÍGONO:
- * - Mapa chico muestra el polígono trazado
+ * POLIGONO:
+ * - Mini mapa (Leaflet) muestra el poligono trazado — sin Google Maps
  * - Campo de nombre para la zona
- * - Reverse geocoding de vértices para detectar calles de referencia
+ * - Reverse geocoding de vertices para detectar calles de referencia
  */
 import { useEffect, useRef, useState } from 'react'
+import L from 'leaflet'
+import 'leaflet/dist/leaflet.css'
 import MapaPoligono from './MapaPoligono'
 
 const GEOREF = 'https://apis.datos.gob.ar/georef/api'
@@ -21,7 +23,7 @@ function esEntreCallesCompleto(texto) {
   return /\bentre\b.+\by\b/i.test(texto)
 }
 
-// ── Google Geocoding API ───────────────────────────────────
+// ── Google Geocoding API — solo como fallback para entre calles ──
 async function geocodificarPunto(texto) {
   const key = import.meta.env.VITE_GOOGLE_MAPS_API_KEY
   if (!key) return null
@@ -43,12 +45,9 @@ async function geocodificarPunto(texto) {
 /**
  * Entre calles: geocodifica las DOS intersecciones y calcula el punto medio.
  * Ej: "Av Corrientes entre Callao y Uruguay"
- *   → geocodifica "Av Corrientes y Callao" → punto A
- *   → geocodifica "Av Corrientes y Uruguay" → punto B
- *   → devuelve { lat, lng } = promedio(A, B)
- *
- * Esta es la técnica usada por sistemas CAD reales: el segmento de calle
- * queda definido por sus dos esquinas, y el punto representativo es el centro.
+ *   -> geocodifica "Av Corrientes y Callao" -> punto A
+ *   -> geocodifica "Av Corrientes y Uruguay" -> punto B
+ *   -> devuelve { lat, lng } = promedio(A, B)
  */
 async function geocodificarEntreCalles(calle, desde, hasta) {
   const [pA, pB] = await Promise.all([
@@ -67,7 +66,6 @@ async function geocodificarEntreCalles(calle, desde, hasta) {
 
 // Para queries de texto libre con "entre" (sin campos separados)
 async function geocodificarConGoogle(texto) {
-  // Intentar parsear como entre calles
   const match = texto.match(/^(.+?)\s+entre\s+(.+?)\s+y\s+(.+)$/i)
   if (match) {
     const [, calle, desde, hasta] = match
@@ -80,7 +78,6 @@ async function geocodificarConGoogle(texto) {
       _puntos: { A: r.puntoA, B: r.puntoB },
     }
   }
-  // Fallback: geocodificar el texto completo
   const r = await geocodificarPunto(texto)
   if (!r) return null
   return {
@@ -110,7 +107,6 @@ async function buscarDirecciones(texto) {
 async function autocompletarCalle(texto) {
   if (!texto || texto.trim().length < 2) return []
   try {
-    // Extrae la última palabra parcial (lo que el usuario está tipeando ahora)
     const url = `${GEOREF}/calles?nombre=${encodeURIComponent(texto)}&provincia=02&max=8&campos=basico`
     const res = await fetch(url)
     const data = await res.json()
@@ -133,7 +129,7 @@ function tipoDir(d) {
   return 'altura'
 }
 
-// ── Reverse geocoding de un punto para obtener calle más cercana ──
+// ── Reverse geocoding de un punto para obtener calle mas cercana ──
 async function calleEnPunto(lat, lng) {
   try {
     const url = `${GEOREF}/ubicacion?lat=${lat}&lon=${lng}&campos=calle`
@@ -143,74 +139,76 @@ async function calleEnPunto(lat, lng) {
   } catch { return null }
 }
 
-// ── Obtiene calles de referencia de los vértices del polígono ──
+// ── Obtiene calles de referencia de los vertices del poligono ──
 async function obtenerCallesReferencia(coords) {
   if (!coords || coords.length < 3) return []
-  // Tomamos los vértices del polígono (máx 8 para no saturar la API)
   const muestra = coords.filter((_, i) => i % Math.max(1, Math.floor(coords.length / 8)) === 0).slice(0, 8)
   const calles = await Promise.all(muestra.map(p => calleEnPunto(p.lat, p.lng)))
-  // Deduplicar y filtrar nulls
   return [...new Set(calles.filter(Boolean))]
 }
 
-// ── MINI MAPA que muestra el polígono ya trazado ─────────────
-function MiniMapaPoligono({ poligono, height = 200, onAmpliar, onChange }) {
+// ── MINI MAPA Leaflet — muestra el poligono ya trazado (solo lectura) ──
+function MiniMapaPoligono({ poligono, height = 200, onAmpliar }) {
   const mapDivRef = useRef(null)
   const mapRef    = useRef(null)
   const polyRef   = useRef(null)
-  const [ready, setReady] = useState(false)
 
   useEffect(() => {
-    if (window.google?.maps) { setReady(true); return }
-    const check = setInterval(() => { if (window.google?.maps) { setReady(true); clearInterval(check) } }, 200)
-    return () => clearInterval(check)
-  }, [])
+    if (!mapDivRef.current) return
 
-  useEffect(() => {
-    if (!ready || !mapDivRef.current) return
+    // Crear mapa si no existe
     if (!mapRef.current) {
-      mapRef.current = new window.google.maps.Map(mapDivRef.current, {
-        center: { lat: -34.6118, lng: -58.4173 },
+      mapRef.current = L.map(mapDivRef.current, {
+        center: [-34.6118, -58.4173],
         zoom: 14,
-        disableDefaultUI: true,
         zoomControl: true,
-        clickableIcons: false,
+        attributionControl: false,
+        dragging: true,
+        scrollWheelZoom: false,
       })
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+      }).addTo(mapRef.current)
     }
 
-    // Eliminar polígono anterior
-    if (polyRef.current) { polyRef.current.setMap(null); polyRef.current = null }
+    // Limpiar poligono anterior
+    if (polyRef.current) {
+      mapRef.current.removeLayer(polyRef.current)
+      polyRef.current = null
+    }
 
     if (poligono?.length >= 3) {
-      polyRef.current = new window.google.maps.Polygon({
-        paths: poligono,
-        fillColor: '#1a2744',
+      const latlngs = poligono.map(p => [p.lat, p.lng])
+      polyRef.current = L.polygon(latlngs, {
+        color:       '#1a2744',
+        fillColor:   '#1a2744',
         fillOpacity: 0.18,
-        strokeColor: '#1a2744',
-        strokeWeight: 2,
-        map: mapRef.current,
-      })
-      // Centrar el mapa en el polígono
-      const bounds = new window.google.maps.LatLngBounds()
-      poligono.forEach(p => bounds.extend(p))
-      mapRef.current.fitBounds(bounds)
+        weight:      2,
+      }).addTo(mapRef.current)
+      mapRef.current.fitBounds(polyRef.current.getBounds(), { padding: [12, 12] })
     }
-  }, [ready, poligono])
+  }, [poligono])
+
+  // Cleanup al desmontar
+  useEffect(() => {
+    return () => {
+      if (mapRef.current) {
+        mapRef.current.remove()
+        mapRef.current = null
+        polyRef.current = null
+      }
+    }
+  }, [])
 
   return (
     <div style={{ borderRadius: 12, overflow: 'hidden', border: '0.5px solid #e5e5ea', position: 'relative' }}>
-      {!ready && (
-        <div style={{ height, background: '#f5f5f7', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#aeaeb2', fontSize: 13 }}>
-          Cargando mapa…
-        </div>
-      )}
-      <div ref={mapDivRef} style={{ height, display: ready ? 'block' : 'none' }}/>
+      <div ref={mapDivRef} style={{ height }}/>
 
-      {/* Botón Ampliar — esquina inferior izquierda */}
+      {/* Boton Ampliar — esquina inferior izquierda */}
       <button onClick={onAmpliar}
         title="Ampliar mapa para trazar"
         style={{
-          position: 'absolute', bottom: 8, left: 8,
+          position: 'absolute', bottom: 8, left: 8, zIndex: 500,
           display: 'flex', alignItems: 'center', gap: 5,
           background: '#fff', border: '0.5px solid #e5e5ea',
           borderRadius: 8, padding: '6px 11px',
@@ -228,10 +226,10 @@ function MiniMapaPoligono({ poligono, height = 200, onAmpliar, onChange }) {
         {poligono?.length >= 3 ? 'Editar zona' : 'Trazar zona'}
       </button>
 
-      {/* Hint cuando está vacío */}
-      {ready && (!poligono || poligono.length < 3) && (
-        <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', background: 'rgba(255,255,255,0.9)', borderRadius: 8, padding: '6px 12px', fontSize: 12, color: '#534ab7', fontWeight: 600, pointerEvents: 'none', boxShadow: '0 1px 6px rgba(0,0,0,0.1)', whiteSpace: 'nowrap', textAlign: 'center' }}>
-          Hacé click en "Trazar zona" para comenzar
+      {/* Hint cuando esta vacio */}
+      {(!poligono || poligono.length < 3) && (
+        <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', background: 'rgba(255,255,255,0.9)', borderRadius: 8, padding: '6px 12px', fontSize: 12, color: '#534ab7', fontWeight: 600, pointerEvents: 'none', boxShadow: '0 1px 6px rgba(0,0,0,0.1)', whiteSpace: 'nowrap', textAlign: 'center', zIndex: 400 }}>
+          Hace click en "Trazar zona" para comenzar
         </div>
       )}
     </div>
@@ -247,11 +245,11 @@ function ModalMapaGrande({ poligono, onChange, onClose }) {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 20px', borderBottom: '0.5px solid #f2f2f7' }}>
           <div>
             <div style={{ fontSize: 15, fontWeight: 700, color: '#1a2744' }}>Trazar zona en el mapa</div>
-            <div style={{ fontSize: 12, color: '#8e8e93', marginTop: 2 }}>Usá la herramienta de dibujo para delimitar el área. Podés editar los vértices arrastrándolos.</div>
+            <div style={{ fontSize: 12, color: '#8e8e93', marginTop: 2 }}>Usa la herramienta de dibujo para delimitar el area. Podes editar los vertices arrastandolos.</div>
           </div>
           <button onClick={onClose}
             style={{ background: '#1a2744', border: 'none', borderRadius: 9, cursor: 'pointer', padding: '8px 18px', fontSize: 13, fontWeight: 700, color: '#fff' }}>
-            Listo ✓
+            Listo
           </button>
         </div>
         <div style={{ padding: 16 }}>
@@ -271,7 +269,7 @@ export default function UbicacionInput({ form, setForm }) {
   const [geocState,   setGeocState]   = useState('idle')
   const [modoMapa,    setModoMapa]    = useState(false)
   const [modalMapa,   setModalMapa]   = useState(false)
-  const [callesRef,   setCallesRef]   = useState([]) // calles de referencia del polígono
+  const [callesRef,   setCallesRef]   = useState([])
   const [loadingRef,  setLoadingRef]  = useState(false)
 
   const debounceRef = useRef(null)
@@ -297,7 +295,7 @@ export default function UbicacionInput({ form, setForm }) {
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
-  // Cada vez que cambia el polígono, obtener calles de referencia
+  // Cada vez que cambia el poligono, obtener calles de referencia
   useEffect(() => {
     const coords = form.poligono_coords
     if (!coords || coords.length < 3) { setCallesRef([]); return }
@@ -305,14 +303,13 @@ export default function UbicacionInput({ form, setForm }) {
     obtenerCallesReferencia(coords).then(calles => {
       setCallesRef(calles)
       setLoadingRef(false)
-      // Guardar en el form como descripción automática (si no hay nombre manual)
       if (!form.poligono_nombre) {
         setForm(f => ({ ...f, poligono_desc: calles.join(' / ') }))
       }
     })
   }, [form.poligono_coords])
 
-  // ── Búsqueda con debounce ────────────────────────────────────
+  // ── Busqueda con debounce ────────────────────────────────────
   function handleChange(val) {
     setQuery(val)
     setGeocState('idle')
@@ -324,28 +321,21 @@ export default function UbicacionInput({ form, setForm }) {
     debounceRef.current = setTimeout(async () => {
       let sugs = []
 
-      // Entre calles: Georef no funciona para CABA en este formato, usar Google
       if (esEntreCallesCompleto(val)) {
         const r = await geocodificarConGoogle(val)
         if (r) sugs = [r]
-      }
-      // Intersección y altura con número: Georef funciona bien
-      else if (esInterseccionCompleta(val) || /\d/.test(val)) {
+      } else if (esInterseccionCompleta(val) || /\d/.test(val)) {
         sugs = await buscarDirecciones(val)
-        // Fallback a Google si Georef no da resultados
         if (sugs.length === 0) {
           const r = await geocodificarConGoogle(val)
           if (r) sugs = [r]
         }
       }
 
-      // Si no hay resultados o el texto es solo nombre de calle, autocompletar con /calles
       if (sugs.length === 0) {
-        // Extraer la parte más relevante para buscar calles
         const partesCalle = val.split(/\sentre\s|\sy\s|\sesq(uina)?\s/i)
         const ultimaParte = partesCalle[partesCalle.length - 1]?.trim()
         const calles = await autocompletarCalle(ultimaParte || val)
-        // Convertir calles a sugerencias de "dirección" para el dropdown
         sugs = calles.map(c => ({
           _tipo: 'calle',
           calle: { nombre: c.nombre, categoria: c.categoria },
@@ -362,15 +352,12 @@ export default function UbicacionInput({ form, setForm }) {
 
   function seleccionar(d) {
     if (d._tipo === 'calle') {
-      // El usuario seleccionó solo una calle — completar el query con ese nombre
       const nombreCalle = d.calle.nombre
-      // Revisar si la query tiene "entre ... y" o "y" parcial
       const hayEntre = /\bentre\s+\S/i.test(query)
       const hayY     = /\sy\s*\S*$/i.test(query)
 
       let nuevoQuery
       if (hayEntre || hayY) {
-        // Reemplazar la última parte con el nombre de la calle seleccionada
         nuevoQuery = query.replace(/\S+$/, nombreCalle)
       } else {
         nuevoQuery = nombreCalle
@@ -379,14 +366,12 @@ export default function UbicacionInput({ form, setForm }) {
       setAbierto(false)
       setSugerencias([])
 
-      // Si la query ahora tiene estructura completa, buscar coordenadas
       if (esEntreCallesCompleto(nuevoQuery) || esInterseccionCompleta(nuevoQuery)) {
         setTimeout(() => buscarCoordsDeTexto(nuevoQuery), 100)
       }
       return
     }
 
-    // Dirección completa seleccionada
     const texto = d._tipo === 'entre_calles'
       ? (d.nomenclatura || d.calle?.nombre)
       : formatSugerencia(d)
@@ -397,7 +382,6 @@ export default function UbicacionInput({ form, setForm }) {
     setSugerencias([])
 
     if (d._tipo === 'entre_calles') {
-      // Entre calles: parsear el nombre del formato "calle entre desde y hasta"
       const match = (d.nomenclatura || '').match(/^(.+?)\s+entre\s+(.+?)\s+y\s+(.+)$/i)
       setForm(f => ({
         ...f,
@@ -464,19 +448,19 @@ export default function UbicacionInput({ form, setForm }) {
 
   return (
     <div>
-      {/* Toggle Dirección / Zona */}
+      {/* Toggle Direccion / Zona */}
       <div style={{ display: 'flex', gap: 6, marginBottom: 9, background: '#f5f5f7', borderRadius: 10, padding: 3 }}>
         <button onClick={() => { setModoMapa(false); limpiarCampos() }}
           style={{ flex: 1, padding: '6px 4px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: !modoMapa ? 700 : 500, background: !modoMapa ? '#fff' : 'transparent', color: !modoMapa ? '#1a2744' : '#8e8e93', boxShadow: !modoMapa ? '0 1px 4px rgba(0,0,0,0.08)' : 'none' }}>
-          📍 Dirección
+          Direccion
         </button>
         <button onClick={() => { setModoMapa(true); limpiarCampos() }}
           style={{ flex: 1, padding: '6px 4px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: modoMapa ? 700 : 500, background: modoMapa ? '#fff' : 'transparent', color: modoMapa ? '#1a2744' : '#8e8e93', boxShadow: modoMapa ? '0 1px 4px rgba(0,0,0,0.08)' : 'none' }}>
-          ⬡ Zona / Polígono
+          Zona / Poligono
         </button>
       </div>
 
-      {/* ── MODO DIRECCIÓN ────────────────────────────────── */}
+      {/* ── MODO DIRECCION ───────────────────────────────── */}
       {!modoMapa && (
         <div ref={wrapRef} style={{ position: 'relative' }}>
           <div style={{ display: 'flex', alignItems: 'center', background: '#f9f9fb', border: `1.5px solid ${geocState === 'ok' ? '#0f6e56' : geocState === 'error' ? '#e24b4a' : '#e5e5ea'}`, borderRadius: 10, overflow: 'hidden' }}>
@@ -499,7 +483,7 @@ export default function UbicacionInput({ form, setForm }) {
           </div>
 
           <div style={{ fontSize: 11, color: '#aeaeb2', marginTop: 5, paddingLeft: 2 }}>
-            Escribí la dirección como querás — altura, esquina o entre calles · <strong>Enter</strong> para buscar
+            Escribi la direccion como queras — altura, esquina o entre calles · <strong>Enter</strong> para buscar
           </div>
 
           {/* Dropdown de sugerencias */}
@@ -507,8 +491,8 @@ export default function UbicacionInput({ form, setForm }) {
             <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4, zIndex: 500, background: '#fff', borderRadius: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.14)', border: '0.5px solid #e5e5ea', overflow: 'hidden' }}>
               {sugerencias.map((d, i) => {
                 const esCalle = d._tipo === 'calle'
-                const tipoIcon = esCalle ? '🛣️' : tipoDir(d) === 'entre_calles' ? '↔' : tipoDir(d) === 'interseccion' ? '✕' : '📍'
-                const tipoLabel = esCalle ? (d.calle.categoria || 'Calle') : tipoDir(d) === 'entre_calles' ? 'Entre calles' : tipoDir(d) === 'interseccion' ? 'Esquina' : 'Dirección'
+                const tipoIcon = esCalle ? '' : tipoDir(d) === 'entre_calles' ? '↔' : tipoDir(d) === 'interseccion' ? '✕' : '📍'
+                const tipoLabel = esCalle ? (d.calle.categoria || 'Calle') : tipoDir(d) === 'entre_calles' ? 'Entre calles' : tipoDir(d) === 'interseccion' ? 'Esquina' : 'Direccion'
                 const texto = esCalle ? d.calle.nombre : formatSugerencia(d)
                 const subtitulo = esCalle ? d.nomenclatura : (d.nomenclatura || 'CABA')
                 return (
@@ -532,11 +516,11 @@ export default function UbicacionInput({ form, setForm }) {
             </div>
           )}
 
-          {/* Estado de geocodificación */}
+          {/* Estado de geocodificacion */}
           {geocState === 'ok' && mapsUrl && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 11px', background: '#e8faf2', borderRadius: 9, marginTop: 8 }}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#0f6e56" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-              <span style={{ fontSize: 12, color: '#0f6e56', fontWeight: 600 }}>Ubicación georreferenciada</span>
+              <span style={{ fontSize: 12, color: '#0f6e56', fontWeight: 600 }}>Ubicacion georreferenciada</span>
               <span style={{ fontSize: 11, color: '#aeaeb2' }}>{form.lat?.toFixed(4)}, {form.lng?.toFixed(4)}</span>
               <a href={mapsUrl} target="_blank" rel="noreferrer"
                 style={{ marginLeft: 'auto', fontSize: 12, color: '#185fa5', fontWeight: 700, textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -547,52 +531,40 @@ export default function UbicacionInput({ form, setForm }) {
           )}
           {geocState === 'error' && (
             <div style={{ fontSize: 12, color: '#854f0b', background: '#faeeda', borderRadius: 9, padding: '7px 11px', marginTop: 8 }}>
-              ⚠️ No se encontraron coordenadas exactas. La dirección se guardará como texto.
+              No se encontraron coordenadas exactas. La direccion se guardara como texto.
             </div>
           )}
         </div>
       )}
 
-      {/* ── MODO POLÍGONO ────────────────────────────────── */}
+      {/* ── MODO POLIGONO ────────────────────────────────── */}
       {modoMapa && (
         <div>
-          {/* Mini mapa — muestra el polígono trazado */}
+          {/* Mini mapa — muestra el poligono trazado */}
           <MiniMapaPoligono
             poligono={form.poligono_coords || []}
             height={180}
             onAmpliar={() => setModalMapa(true)}
-            onChange={(coords, desc, centroide) => {
-              setForm(f => ({
-                ...f,
-                poligono_coords: coords,
-                poligono_desc: desc,
-                lat: centroide?.lat ?? f.lat,
-                lng: centroide?.lng ?? f.lng,
-                modo_ubicacion: 'poligono',
-              }))
-            }}
           />
 
           {/* Info: zona trazada + calles de referencia + campo de nombre */}
           {form.poligono_coords?.length >= 3 ? (
             <div style={{ marginTop: 8 }}>
-              {/* Calles de referencia (auto-detectadas) */}
               {callesRef.length > 0 && (
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: 7, padding: '7px 11px', background: '#f0f4ff', borderRadius: 9, marginBottom: 8 }}>
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#534ab7" strokeWidth="2" style={{ marginTop: 1, flexShrink: 0 }}><path d="M3 12h18M3 6h18M3 18h18"/></svg>
                   <div>
                     <div style={{ fontSize: 11, fontWeight: 700, color: '#534ab7', marginBottom: 2 }}>Calles de referencia detectadas</div>
                     <div style={{ fontSize: 12, color: '#3c3489', fontWeight: 600 }}>
-                      {loadingRef ? 'Detectando…' : callesRef.join(' / ')}
+                      {loadingRef ? 'Detectando...' : callesRef.join(' / ')}
                     </div>
                   </div>
                 </div>
               )}
               {loadingRef && callesRef.length === 0 && (
-                <div style={{ fontSize: 12, color: '#8e8e93', padding: '6px 0' }}>⏳ Detectando calles de referencia…</div>
+                <div style={{ fontSize: 12, color: '#8e8e93', padding: '6px 0' }}>Detectando calles de referencia...</div>
               )}
 
-              {/* Campo: nombre del área */}
               <div>
                 <div style={{ fontSize: 11, fontWeight: 700, color: '#aeaeb2', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 5 }}>
                   Nombre de la zona
@@ -604,15 +576,14 @@ export default function UbicacionInput({ form, setForm }) {
                     poligono_nombre: e.target.value,
                     poligono_desc: e.target.value || callesRef.join(' / '),
                   }))}
-                  placeholder={callesRef.length > 0 ? `Ej: ${callesRef.slice(0,2).join(' / ')}` : 'Ej: Zona Norte, Polígono Microcentro…'}
+                  placeholder={callesRef.length > 0 ? `Ej: ${callesRef.slice(0,2).join(' / ')}` : 'Ej: Zona Norte, Poligono Microcentro...'}
                   style={{ width: '100%', background: '#f9f9fb', border: '0.5px solid #e5e5ea', borderRadius: 9, padding: '9px 12px', fontSize: 14, color: '#1d1d1f', fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' }}
                 />
                 <div style={{ fontSize: 11, color: '#aeaeb2', marginTop: 4 }}>
-                  Si no ponés un nombre, se usa la referencia de calles detectada automáticamente
+                  Si no pones un nombre, se usa la referencia de calles detectada automaticamente
                 </div>
               </div>
 
-              {/* Botón limpiar zona */}
               <button onClick={() => setForm(f => ({ ...f, poligono_coords: [], poligono_desc: '', poligono_nombre: '', lat: null, lng: null }))}
                 style={{ marginTop: 8, fontSize: 12, color: '#e24b4a', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, padding: 0 }}>
                 × Borrar zona trazada
@@ -620,7 +591,7 @@ export default function UbicacionInput({ form, setForm }) {
             </div>
           ) : (
             <div style={{ fontSize: 12, color: '#8e8e93', marginTop: 6, textAlign: 'center' }}>
-              Hacé click en "Trazar zona" para abrir el mapa y delimitar el área
+              Hace click en "Trazar zona" para abrir el mapa y delimitar el area
             </div>
           )}
         </div>
