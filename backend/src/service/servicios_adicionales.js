@@ -1,5 +1,6 @@
 const pool = require('../db/pool');
 const m    = require('../model/servicios_adicionales');
+const { tieneSancionActiva } = require('../model/sanciones');
 
 // ── Helpers ────────────────────────────────────────────────────
 
@@ -19,9 +20,10 @@ async function calcularModulos(hora_inicio, hora_fin) {
 }
 
 async function calcularPrioridad(agenteId, periodo) {
+  const pesoModulo = parseInt(await m.getConfigValor('peso_modulo', '100'));
   const mods = await m.getModulosAgente(agenteId, periodo);
   const pens = await m.getPenalizacionesAgente(agenteId, periodo);
-  return -mods - pens;
+  return -(mods * pesoModulo) - pens;
 }
 
 async function calcularPeriodoFinPenalizacion(periodoInicio) {
@@ -89,8 +91,9 @@ async function avanzarEstado(id) {
   try {
     await client.query('BEGIN');
     const result = await m.avanzarEstado(client, id);
-    if (result.notFound) { await client.query('ROLLBACK'); return { error: 'No encontrado', status: 404 }; }
-    if (result.badState)  { await client.query('ROLLBACK'); return { error: 'No se puede avanzar', status: 400 }; }
+    if (result.notFound)             { await client.query('ROLLBACK'); return { error: 'No encontrado', status: 404 }; }
+    if (result.badState)             { await client.query('ROLLBACK'); return { error: 'No se puede avanzar desde este estado', status: 400 }; }
+    if (result.presentismoIncompleto){ await client.query('ROLLBACK'); return { error: `Hay ${result.faltantes} agente${result.faltantes !== 1 ? 's' : ''} sin presentismo registrado. Completá el presentismo de todos los turnos antes de cerrar.`, status: 409 }; }
     await client.query('COMMIT');
     return { data: result.row };
   } catch (e) { await client.query('ROLLBACK'); throw e; }
@@ -148,6 +151,8 @@ async function getEstructura(servicioId, turnoId) {
 async function upsertEstructura(servicioId, turnoId, body) {
   const { agente_id, rol, jefe_id, origen, tipo_convocatoria } = body;
   const tipo = tipo_convocatoria || 'adicional';
+  if (await tieneSancionActiva(agente_id))
+    return { error: 'El agente se encuentra vetado y no puede ser asignado a ningún servicio adicional.', status: 409, vetado: true };
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -187,7 +192,7 @@ async function getPostulantes(servicioId, rol) {
 
 async function importCsvPostulantes(servicioId, buffer) {
   const { parse } = require('csv-parse/sync');
-  const ROLES_VALIDOS = ['jefe_operativo', 'coordinador', 'supervisor', 'infante', 'motorizado', 'chofer'];
+  const ROLES_VALIDOS = ['infante', 'supervisor', 'chofer', 'motorizado', 'chofer_grua', 'coordinador'];
   const filas = parse(buffer.toString('utf-8'), { columns: true, skip_empty_lines: true, trim: true });
   const resultado = { importados: 0, errores: [] };
   const client = await pool.connect();
@@ -207,6 +212,7 @@ async function importCsvPostulantes(servicioId, buffer) {
       if (!ROLES_VALIDOS.includes(rol)) { resultado.errores.push({ fila: i + 2, legajo, mensaje: 'Rol invalido: ' + rol }); continue; }
       const ag = await m.getAgentePorLegajo(legajo);
       if (!ag) { resultado.errores.push({ fila: i + 2, legajo, mensaje: 'Agente no encontrado' }); continue; }
+      if (await tieneSancionActiva(ag.id)) { resultado.errores.push({ fila: i + 2, legajo, mensaje: 'Agente vetado (sanción activa)' }); continue; }
       const rawLower = turnosRaw.toLowerCase();
       const esTodos  = !turnosRaw || rawLower === 'todos los turnos' || rawLower === 'todos';
       let turnosIds = [];
@@ -230,6 +236,8 @@ async function importCsvPostulantes(servicioId, buffer) {
 async function crearPostulante(servicioId, body) {
   const { agente_id, rol_solicitado, todos_los_turnos, turnos_ids } = body;
   const todosLos = todos_los_turnos !== false;
+  if (await tieneSancionActiva(agente_id))
+    return { error: 'El agente se encuentra vetado y no puede postularse a ningún servicio adicional.', status: 409, vetado: true };
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -382,6 +390,43 @@ async function getScoringAgente(agenteId, periodo) {
   return { data: { agente_id: agenteId, periodo: p, prioridad, modulos_por_periodo: modulos, penalizaciones_activas: penalizaciones } };
 }
 
+async function getRecursos(servicioId) { return await m.getRecursosServicio(servicioId); }
+async function patchRecursoEstado(servicioId, recursoId, body, userId) { return await m.updateRecursoEstado(servicioId, recursoId, body, userId); }
+
+async function getNomina(periodo) {
+  const p           = periodo || periodoActual();
+  const pesoModulo  = parseInt(await m.getConfigValor('peso_modulo', '100'));
+  const ptsAusencia = parseInt(await m.getConfigValor('penalizacion_ausencia_puntos', '25'));
+  const agentes     = await m.getNomina(p);
+
+  const conScore = agentes.map(a => {
+    const ptsModulos  = a.modulos_periodo * pesoModulo;
+    const score       = ptsModulos + a.puntos_penalizacion;
+
+    // Factores que componen el score — extensible a futuro
+    const factores = [
+      {
+        tipo:    'modulos',
+        label:   'Módulos trabajados',
+        detalle: `${a.modulos_periodo} mód. × ${pesoModulo} pts`,
+        puntos:  ptsModulos,
+      },
+      ...(a.ausencias_periodo > 0 ? [{
+        tipo:    'ausencia',
+        label:   'Ausencias injustificadas',
+        detalle: `${a.ausencias_periodo} aus. × ${ptsAusencia} pts`,
+        puntos:  a.ausencias_periodo * ptsAusencia,
+      }] : []),
+    ];
+
+    return { ...a, score, factores, periodo: p };
+  });
+
+  // Ordenar por score ascendente y asignar posición
+  conScore.sort((a, b) => a.score - b.score);
+  return conScore.map((a, i) => ({ ...a, posicion: i + 1, total_nomina: conScore.length }));
+}
+
 module.exports = {
   getConfig, updateConfig,
   getLista, crearServicio,
@@ -395,4 +440,6 @@ module.exports = {
   updateFlyer, getFlyerData,
   getModulosDia, getToken, upsertToken, patchToken,
   getScoringAgente,
+  getRecursos, patchRecursoEstado,
+  getNomina,
 };

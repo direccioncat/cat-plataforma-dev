@@ -6,25 +6,19 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import api from '../../lib/api'
+import { ROLES_OPERATIVOS } from '../../lib/rolesOperativos'
 
 const MAX_MODULOS_DIA = 2
 
-const ROLES = {
-  jefe_operativo: { label: 'Jefe operativo', color: '#BA7517', bg: '#FAEEDA', dot: '#EF9F27' },
-  coordinador:    { label: 'Coordinador',    color: '#993556', bg: '#FBEAF0', dot: '#D4537E' },
-  supervisor:     { label: 'Supervisor',     color: '#3C3489', bg: '#EEEDFE', dot: '#7F77DD' },
-  infante:        { label: 'Infante',        color: '#0F6E56', bg: '#E1F5EE', dot: '#1D9E75' },
-  motorizado:     { label: 'Motorizado',     color: '#993C1D', bg: '#FAECE7', dot: '#D85A30' },
-  chofer:         { label: 'Chofer',         color: '#5F5E5A', bg: '#F1EFE8', dot: '#888780' },
-}
-const ROLES_CONDUCCION = ['jefe_operativo', 'coordinador', 'supervisor']
+const ROLES = ROLES_OPERATIVOS
+const ROLES_CONDUCCION = ['coordinador', 'supervisor']
 const ROLES_TODOS = Object.keys(ROLES)
 const ROL_DEFAULT = 'infante'
-const MAPA_ROL = { jefe_general:'jefe_operativo', jefe:'coordinador', agente:'infante', supervisor:'supervisor', motorizado:'motorizado', chofer:'chofer', infante:'infante', jefe_operativo:'jefe_operativo', coordinador:'coordinador' }
+const MAPA_ROL = { jefe_general:'coordinador', jefe:'coordinador', agente:'infante', supervisor:'supervisor', motorizado:'motorizado', chofer:'chofer', chofer_grua:'chofer_grua', infante:'infante', jefe_operativo:'coordinador', coordinador:'coordinador' }
 function mapearRol(r) { return MAPA_ROL[r] || 'infante' }
 const MATCH_CONDUCCION = ['jefe_general','jefe','supervisor','jefe_operativo','coordinador']
 const MATCH_MOTORIZADO = ['motorizado']
-const MATCH_CHOFER = ['chofer']
+const MATCH_CHOFER = ['chofer','chofer_grua']
 const MATCH_INFANTE = ['agente','infante']
 
 function fmtHora(h) { return h ? String(h).slice(0,5) : '' }
@@ -78,11 +72,17 @@ function TurnoColumna({turno,estructura,onQuitar,onCambiarRol,onAutoAsignar,auto
   const hora=[fmtHora(turno.hora_inicio),fmtHora(turno.hora_fin)].filter(Boolean).join(' \u2013 ')
   const porRol={};for(const e of estructura){const rk=e.rol||'infante';if(!porRol[rk])porRol[rk]=[];porRol[rk].push(e)}
   const secciones=ROLES_TODOS.filter(r=>porRol[r]?.length>0)
-  const totalSub=['infante','motorizado','chofer'].reduce((s,r)=>s+(porRol[r]||[]).length,0)
-  const totalCond=ROLES_CONDUCCION.reduce((s,r)=>s+(porRol[r]||[]).length,0)
-  const totalMoto=(porRol.motorizado||[]).length, totalChof=(porRol.chofer||[]).length
-  const dotA=turno.dotacion_agentes||0,dotS=turno.dotacion_supervisores||0,dotM=turno.dotacion_motorizados||0,dotC=turno.dotacion_choferes||0
-  const totalDot=dotA+dotS+dotM+dotC, totalAsig=estructura.length, faltanPlazas=totalDot>0&&totalAsig<totalDot
+  const cntInf  =(porRol.infante    ||[]).length
+  const cntSup  =(porRol.supervisor ||[]).length
+  const cntMoto =(porRol.motorizado ||[]).length
+  const cntChof =(porRol.chofer     ||[]).length
+  const cntGrua =(porRol.chofer_grua||[]).length
+  const cntCoor =(porRol.coordinador||[]).length
+  const dotA=turno.dotacion_agentes||0, dotS=turno.dotacion_supervisores||0
+  const dotM=turno.dotacion_motorizados||0, dotC=turno.dotacion_choferes||0
+  const dotG=turno.dotacion_choferes_gruas||0, dotCoor=turno.dotacion_coordinadores||0
+  const totalDot=dotA+dotS+dotM+dotC+dotG+dotCoor
+  const totalAsig=estructura.length, faltanPlazas=totalDot>0&&totalAsig<totalDot
   const sinCandidatos = faltanPlazas && disponibles === 0
   return(
     <div style={{flex:1,minWidth:230,maxWidth:360,background:'#fff',borderRadius:14,border:'0.5px solid #e5e5ea',display:'flex',flexDirection:'column',overflow:'hidden'}}>
@@ -92,10 +92,12 @@ function TurnoColumna({turno,estructura,onQuitar,onCambiarRol,onAutoAsignar,auto
           <div style={{fontSize:20,fontWeight:600,color:'#1a2744'}}>{totalAsig}</div>
         </div>
         {totalDot>0&&(<div style={{display:'flex',gap:6,marginTop:8,flexWrap:'wrap'}}>
-          {dotA>0&&<CoberturaBar label="Infantes" actual={totalSub} objetivo={dotA} color="#1D9E75"/>}
-          {dotS>0&&<CoberturaBar label="Conduccion" actual={totalCond} objetivo={dotS} color="#7F77DD"/>}
-          {dotM>0&&<CoberturaBar label="Motorizados" actual={totalMoto} objetivo={dotM} color="#D85A30"/>}
-          {dotC>0&&<CoberturaBar label="Choferes" actual={totalChof} objetivo={dotC} color="#888780"/>}
+          {dotA>0&&<CoberturaBar label="Infantes" actual={cntInf} objetivo={dotA} color="#1D9E75"/>}
+          {dotS>0&&<CoberturaBar label="Supervisores" actual={cntSup} objetivo={dotS} color="#7F77DD"/>}
+          {dotM>0&&<CoberturaBar label="Motorizados" actual={cntMoto} objetivo={dotM} color="#D85A30"/>}
+          {dotC>0&&<CoberturaBar label="Choferes" actual={cntChof} objetivo={dotC} color="#888780"/>}
+          {dotG>0&&<CoberturaBar label="Choferes de grúa" actual={cntGrua} objetivo={dotG} color="#818CF8"/>}
+          {dotCoor>0&&<CoberturaBar label="Coordinadores" actual={cntCoor} objetivo={dotCoor} color="#D4537E"/>}
         </div>)}
         {faltanPlazas&&(
           <div>
@@ -125,14 +127,33 @@ function TurnoColumna({turno,estructura,onQuitar,onCambiarRol,onAutoAsignar,auto
 function PostulanteRow({p,selected,turnosAsignado,onClick,limiteDiario}) {
   const pi=prioInfo(p),[hover,setHover]=useState(false),yaA=turnosAsignado>0,mods=p.modulos_mes||0
   const rolLabel=(ROLES[mapearRol(p.rol_solicitado)]||ROLES.infante).label
-  return(<div onClick={onClick} onMouseEnter={()=>setHover(true)} onMouseLeave={()=>setHover(false)} style={{display:'flex',alignItems:'center',gap:8,padding:'7px 10px',borderRadius:10,background:selected?'#E6F1FB':hover?'#f9f9fb':'transparent',opacity:yaA&&!selected?0.55:1,cursor:'pointer',userSelect:'none',transition:'all 0.1s'}}>
-    <div style={{width:16,height:16,borderRadius:4,flexShrink:0,border:selected?'1.5px solid #185FA5':'1.5px solid #d1d1d6',background:selected?'#185FA5':'transparent',display:'flex',alignItems:'center',justifyContent:'center',transition:'all 0.1s'}}>{selected&&<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>}</div>
-    <div style={{width:30,height:30,borderRadius:'50%',flexShrink:0,background:pi.bg,border:`1.5px solid ${pi.color}`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:10,fontWeight:600,color:pi.color}}>{initials(p.nombre_completo)}</div>
-    <div style={{flex:1,minWidth:0}}><div style={{fontSize:12,fontWeight:500,color:'#1d1d1f',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{p.nombre_completo}</div><div style={{fontSize:10,color:'#aeaeb2'}}>{p.legajo} · {rolLabel}</div></div>
-    {mods>0&&<span style={{fontSize:9,fontWeight:600,padding:'1px 6px',borderRadius:10,flexShrink:0,background:pi.bg,color:pi.color,border:`1px solid ${pi.color}33`}}>{mods}m</span>}
-    {(p.penalizaciones_activas||0)>0&&<span style={{fontSize:10,color:'#A32D2D',flexShrink:0,fontWeight:700}} title="Penalizado">!</span>}
-    {yaA&&<span style={{fontSize:9,fontWeight:600,padding:'1px 6px',borderRadius:10,background:'#E6F1FB',color:'#185FA5',flexShrink:0}}>{turnosAsignado}t</span>}
-    {limiteDiario&&<span style={{fontSize:9,fontWeight:600,padding:'1px 6px',borderRadius:10,background:'#FFF4E5',color:'#BA7517',border:'1px solid #EFC97333',flexShrink:0}} title={`Límite de ${MAX_MODULOS_DIA} módulos diarios alcanzado`}>límite</span>}
+  const vetado=p.vetado
+  return(<div onClick={vetado?undefined:onClick} onMouseEnter={()=>setHover(true)} onMouseLeave={()=>setHover(false)}
+    style={{display:'flex',alignItems:'center',gap:8,padding:'7px 10px',borderRadius:10,
+      background:vetado?'#fff5f5':selected?'#E6F1FB':hover?'#f9f9fb':'transparent',
+      opacity:vetado?0.7:yaA&&!selected?0.55:1,
+      cursor:vetado?'not-allowed':'pointer',userSelect:'none',transition:'all 0.1s'}}>
+    <div style={{width:16,height:16,borderRadius:4,flexShrink:0,
+      border:vetado?'1.5px solid #e0b0b0':selected?'1.5px solid #185FA5':'1.5px solid #d1d1d6',
+      background:vetado?'#feecec':selected?'#185FA5':'transparent',
+      display:'flex',alignItems:'center',justifyContent:'center',transition:'all 0.1s'}}>
+      {vetado&&<span style={{fontSize:8,color:'#c0392b',fontWeight:700,lineHeight:1}}>✕</span>}
+      {!vetado&&selected&&<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>}
+    </div>
+    <div style={{width:30,height:30,borderRadius:'50%',flexShrink:0,
+      background:vetado?'#feecec':pi.bg,
+      border:`1.5px solid ${vetado?'#c0392b':pi.color}`,
+      display:'flex',alignItems:'center',justifyContent:'center',fontSize:10,fontWeight:600,
+      color:vetado?'#c0392b':pi.color}}>{initials(p.nombre_completo)}</div>
+    <div style={{flex:1,minWidth:0}}>
+      <div style={{fontSize:12,fontWeight:500,color:vetado?'#c0392b':'#1d1d1f',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{p.nombre_completo}</div>
+      <div style={{fontSize:10,color:'#aeaeb2'}}>{p.legajo} · {rolLabel}</div>
+    </div>
+    {vetado&&<span style={{fontSize:9,fontWeight:700,padding:'1px 6px',borderRadius:10,background:'#c0392b',color:'#fff',flexShrink:0,letterSpacing:'0.03em'}}>SANCIONADO</span>}
+    {!vetado&&mods>0&&<span style={{fontSize:9,fontWeight:600,padding:'1px 6px',borderRadius:10,flexShrink:0,background:pi.bg,color:pi.color,border:`1px solid ${pi.color}33`}}>{mods}m</span>}
+    {!vetado&&(p.penalizaciones_activas||0)>0&&<span style={{fontSize:10,color:'#A32D2D',flexShrink:0,fontWeight:700}} title="Penalizado">!</span>}
+    {!vetado&&yaA&&<span style={{fontSize:9,fontWeight:600,padding:'1px 6px',borderRadius:10,background:'#E6F1FB',color:'#185FA5',flexShrink:0}}>{turnosAsignado}t</span>}
+    {!vetado&&limiteDiario&&<span style={{fontSize:9,fontWeight:600,padding:'1px 6px',borderRadius:10,background:'#FFF4E5',color:'#BA7517',border:'1px solid #EFC97333',flexShrink:0}} title={`Límite de ${MAX_MODULOS_DIA} módulos diarios alcanzado`}>límite</span>}
   </div>)
 }
 
@@ -241,7 +262,7 @@ export default function SATabArmado({servicioId}) {
       const slots=[
         {rolAsignar:'supervisor',match:MATCH_CONDUCCION,faltan:Math.max(0,(turno.dotacion_supervisores||0)-yaCond)},
         {rolAsignar:'motorizado',match:MATCH_MOTORIZADO,faltan:Math.max(0,(turno.dotacion_motorizados||0)-yaMoto)},
-        {rolAsignar:'chofer',match:MATCH_CHOFER,faltan:Math.max(0,(turno.dotacion_choferes||0)-yaChof)},
+        {rolAsignar:'chofer',match:MATCH_CHOFER,faltan:Math.max(0,((turno.dotacion_choferes||0)+(turno.dotacion_choferes_gruas||0))-yaChof)},
         {rolAsignar:'infante',match:MATCH_INFANTE,faltan:Math.max(0,(turno.dotacion_agentes||0)-yaInf)},
       ].filter(s=>s.faltan>0)
       const totalFaltan=slots.reduce((s,sl)=>s+sl.faltan,0); if(totalFaltan<=0){setAutoAsignando(false);return}
@@ -259,12 +280,12 @@ export default function SATabArmado({servicioId}) {
       const disponibles=postulantes.filter(p=>{
         const pid=p.agente_id||p.id
         const dispTurno=p.todos_los_turnos||(p.turnos_ids||[]).includes(turnoId)
-        return!yaEnEsteTurno.has(pid)&&(p.penalizaciones_activas||0)===0&&dispTurno&&puedeAsignar(pid)
+        return!yaEnEsteTurno.has(pid)&&!p.vetado&&(p.penalizaciones_activas||0)===0&&dispTurno&&puedeAsignar(pid)
       })
       const bloqueadosLimite=postulantes.filter(p=>{
         const pid=p.agente_id||p.id
         const dispTurno=p.todos_los_turnos||(p.turnos_ids||[]).includes(turnoId)
-        return!yaEnEsteTurno.has(pid)&&(p.penalizaciones_activas||0)===0&&dispTurno&&!puedeAsignar(pid)
+        return!yaEnEsteTurno.has(pid)&&!p.vetado&&(p.penalizaciones_activas||0)===0&&dispTurno&&!puedeAsignar(pid)
       }).length
 
       function scorear(lista){return lista.map(p=>({...p,_pid:p.agente_id||p.id,_ts:turnosDeAgente[p.agente_id||p.id]||0,_m:p.modulos_mes||0})).sort((a,b)=>a._ts!==b._ts?a._ts-b._ts:a._m-b._m)}
@@ -290,7 +311,10 @@ export default function SATabArmado({servicioId}) {
     let list=q?postulantes.filter(p=>(p.nombre_completo||'').toLowerCase().includes(q)||(p.legajo||'').includes(q)):postulantes
     if(turnoFiltro)list=list.filter(p=>p.todos_los_turnos||(p.turnos_ids||[]).includes(turnoFiltro))
     const asig=new Set(); for(const estr of Object.values(estructuraPorTurno))for(const e of estr)asig.add(e.agente_id)
-    return[...list].sort((a,b)=>(asig.has(a.agente_id||a.id)?1:0)-(asig.has(b.agente_id||b.id)?1:0))
+    return[...list].sort((a,b)=>{
+      if(a.vetado!==b.vetado)return a.vetado?1:-1
+      return(asig.has(a.agente_id||a.id)?1:0)-(asig.has(b.agente_id||b.id)?1:0)
+    })
   },[postulantes,busqueda,estructuraPorTurno,turnoFiltro])
 
   const selectAll=useCallback(()=>{const ids=filtrados.map(p=>p.agente_id||p.id);setSelected(prev=>{const n=new Set(prev);ids.every(id=>n.has(id))?ids.forEach(id=>n.delete(id)):ids.forEach(id=>n.add(id));return n})},[filtrados])
@@ -306,6 +330,7 @@ export default function SATabArmado({servicioId}) {
       result[turno.id]=postulantes.filter(p=>{
         const pid=p.agente_id||p.id
         if(yaEnTurno.has(pid))return false
+        if(p.vetado)return false
         if((p.penalizaciones_activas||0)>0)return false
         const dispTurno=p.todos_los_turnos||(p.turnos_ids||[]).includes(turno.id)
         if(!dispTurno)return false
@@ -317,7 +342,7 @@ export default function SATabArmado({servicioId}) {
   },[turnos,estructuraPorTurno,postulantes,modulosDia])
 
   // Resumen pool
-  const totalVacantes=useMemo(()=>turnos.reduce((s,t)=>s+(t.dotacion_agentes||0)+(t.dotacion_supervisores||0)+(t.dotacion_choferes||0)+(t.dotacion_motorizados||0),0),[turnos])
+  const totalVacantes=useMemo(()=>turnos.reduce((s,t)=>s+(t.dotacion_agentes||0)+(t.dotacion_supervisores||0)+(t.dotacion_choferes||0)+(t.dotacion_choferes_gruas||0)+(t.dotacion_motorizados||0)+(t.dotacion_coordinadores||0),0),[turnos])
   const totalAsignadosGlobal=useMemo(()=>Object.values(estructuraPorTurno).reduce((s,e)=>s+e.length,0),[estructuraPorTurno])
   const capacidadPool=useMemo(()=>Object.values(disponiblesPerTurno).reduce((s,n)=>s+n,0),[disponiblesPerTurno])
 

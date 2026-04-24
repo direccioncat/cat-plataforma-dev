@@ -98,9 +98,13 @@ async function crearServicioAdicional(client, { os_adicional_id, userId, oa, cal
   const { rows: [sa] } = await client.query('INSERT INTO servicios_adicionales (os_adicional_id, creado_por) VALUES ($1,$2) RETURNING *', [os_adicional_id, userId]);
   const turnosOS = await client.query('SELECT * FROM os_adicional_turnos WHERE os_adicional_id = $1 ORDER BY fecha NULLS LAST, hora_inicio, orden', [os_adicional_id]);
   for (const t of turnosOS.rows) {
+    // Conduccion = supervisores + coordinadores + jefes_operativo
+    // Choferes   = choferes + choferes_gruas
+    const conduccion = (t.dotacion_supervisores || 0) + (t.dotacion_coordinadores || 0) + (t.dotacion_jefes_operativo || 0);
+    const choferes   = (t.dotacion_choferes || 0) + (t.dotacion_choferes_gruas || 0);
     await client.query(
-      'INSERT INTO sa_turnos (servicio_id, nombre, fecha, hora_inicio, hora_fin, modulos, dotacion_agentes, dotacion_supervisores, dotacion_choferes, orden) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)',
-      [sa.id, t.nombre || null, t.fecha, t.hora_inicio, t.hora_fin, calcularModulosSync(t.hora_inicio, t.hora_fin), t.dotacion_agentes, t.dotacion_supervisores, t.dotacion_choferes, t.orden]
+      'INSERT INTO sa_turnos (servicio_id, nombre, fecha, hora_inicio, hora_fin, modulos, dotacion_agentes, dotacion_supervisores, dotacion_choferes, dotacion_motorizados, orden) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)',
+      [sa.id, t.nombre || null, t.fecha, t.hora_inicio, t.hora_fin, calcularModulosSync(t.hora_inicio, t.hora_fin), t.dotacion_agentes || 0, conduccion, choferes, t.dotacion_motorizados || 0, t.orden]
     );
   }
   if (turnosOS.rows.length === 0) {
@@ -221,4 +225,27 @@ async function actualizarElemento(elId, { nombre, instruccion, geometria }) {
 
 async function eliminarElemento(elId) { await pool.query('DELETE FROM os_adicional_elementos WHERE id = $1', [elId]); }
 
-module.exports = { getLista, getById, crear, actualizar, cambiarEstado, enviarValidacion, validar, rechazar, eliminar, crearServicioAdicional, registrarActividad, getTurnos, crearTurno, actualizarTurno, eliminarTurno, crearFase, duplicarFase, moverFase, actualizarFase, eliminarFase, crearElemento, actualizarElemento, eliminarElemento };
+// ── Recursos ──────────────────────────────────────────────────
+async function sincronizarRecursos(osId, recursos) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('DELETE FROM os_adicional_recursos WHERE os_adicional_id = $1', [osId]);
+    for (const r of recursos) {
+      await client.query(
+        'INSERT INTO os_adicional_recursos (os_adicional_id, tipo, cantidad, descripcion, categoria) VALUES ($1,$2,$3,$4,$5)',
+        [osId, r.tipo, r.cantidad || 0, r.descripcion || null, r.categoria || 'elemento']
+      );
+    }
+    await client.query('COMMIT');
+    const { rows } = await pool.query('SELECT * FROM os_adicional_recursos WHERE os_adicional_id = $1 ORDER BY categoria, tipo', [osId]);
+    return rows;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+module.exports = { getLista, getById, crear, actualizar, cambiarEstado, enviarValidacion, validar, rechazar, eliminar, crearServicioAdicional, registrarActividad, getTurnos, crearTurno, actualizarTurno, eliminarTurno, crearFase, duplicarFase, moverFase, actualizarFase, eliminarFase, crearElemento, actualizarElemento, eliminarElemento, sincronizarRecursos };

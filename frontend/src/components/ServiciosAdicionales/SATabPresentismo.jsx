@@ -1,15 +1,9 @@
 import { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import api from '../../lib/api'
+import { ROLES_OPERATIVOS } from '../../lib/rolesOperativos'
 
-const ROL_LABELS = {
-  jefe_operativo: 'Jefe Operativo',
-  coordinador:    'Coordinador',
-  supervisor:     'Supervisor',
-  infante:        'Infante',
-  motorizado:     'Motorizado',
-  chofer:         'Chofer',
-}
+const ROL_LABELS = Object.fromEntries(Object.entries(ROLES_OPERATIVOS).map(([k, v]) => [k, v.label]))
 
 function fmtHora(h) { return h ? String(h).slice(0, 5) : '' }
 function fmtFecha(f) {

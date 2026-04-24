@@ -9,7 +9,9 @@ import { useState, useRef, useEffect } from 'react'
 
 const TIPO_LABEL = { punto_control:'Punto', tramo:'Tramo', zona_area:'Area', desvio:'Desvio' }
 const COLORES_FASE = ['#e24b4a','#f5c800','#4ecdc4','#8b5cf6','#f97316','#22c55e']
-const RECURSOS_TIPOS = ['Cono','Cartel luminoso','Baston luminoso','Moto','Movil','Valla','Otro']
+
+const VEHICULOS_TIPOS  = ['Bicicleta','Moto','Pick Up','Plancha','Percha','Pluma','Utilitario','Minibus','Grúa Pesados','Furgón','Almeja']
+const ELEMENTOS_TIPOS  = ['Cono','Cartel luminoso','Bastón luminoso','Valla','Movil','Otro']
 
 function TipoIcon({ tipo, color, size=13 }) {
   switch (tipo) {
@@ -434,38 +436,99 @@ function ModalNuevoTurno({ fechasOS, onCrear, onCerrar }) {
 }
 
 // ── Recursos ──────────────────────────────────────────────────
-function PanelRecursos({ recursos, onChange }) {
+function RecursoRow({ r, tipos, lista, onChange, onEliminar }) {
   return (
-    <div>
-      <div style={{ fontSize:11, fontWeight:600, color:'#aeaeb2', letterSpacing:'0.05em', marginBottom:10 }}>MATERIALES</div>
-      {recursos.length === 0 && <div style={{ fontSize:12, color:'#c7c7cc', textAlign:'center', padding:'12px 0', fontStyle:'italic' }}>Sin materiales asignados</div>}
-      {recursos.map((r, i) => (
-        <div key={i} style={{ display:'flex', alignItems:'center', gap:6, marginBottom:6, background:'#f9f9fb', border:'0.5px solid #efefef', borderRadius:10, padding:'7px 9px' }}>
-          <select value={r.tipo} onChange={e => { const n=[...recursos]; n[i]={...r,tipo:e.target.value}; onChange(n) }}
-            style={{ flex:2, background:'transparent', border:'none', fontSize:12, color:'#1d1d1f', fontFamily:'inherit', outline:'none', cursor:'pointer' }}>
-            {RECURSOS_TIPOS.map(t => <option key={t}>{t}</option>)}
-          </select>
-          <div style={{ display:'flex', alignItems:'center', gap:4 }}>
-            <button onClick={() => { const n=[...recursos]; n[i]={...r,cantidad:Math.max(0,r.cantidad-1)}; onChange(n) }}
-              style={{ width:24,height:24,borderRadius:6,border:'0.5px solid #e5e5ea',background:'#fff',cursor:'pointer',fontSize:13,color:'#636366',display:'flex',alignItems:'center',justifyContent:'center' }}>-</button>
-            <input
-              type="number" min="0" value={r.cantidad}
-              onChange={e => { const n=[...recursos]; n[i]={...r,cantidad:Math.max(0,parseInt(e.target.value)||0)}; onChange(n) }}
-              style={{ width:44,textAlign:'center',border:'0.5px solid #e5e5ea',borderRadius:6,padding:'3px 0',fontSize:13,fontWeight:700,color:'#1a2744',fontFamily:'inherit',outline:'none',background:'#fff' }}/>
-            <button onClick={() => { const n=[...recursos]; n[i]={...r,cantidad:r.cantidad+1}; onChange(n) }}
-              style={{ width:24,height:24,borderRadius:6,border:'none',background:'#1a2744',cursor:'pointer',fontSize:13,color:'#fff',display:'flex',alignItems:'center',justifyContent:'center' }}>+</button>
-          </div>
-          <button onClick={() => onChange(recursos.filter((_,j) => j!==i))}
-            style={{ background:'none',border:'none',color:'#d1d1d6',cursor:'pointer',fontSize:12,padding:'2px' }}
-            onMouseEnter={e => e.currentTarget.style.color='#e24b4a'}
-            onMouseLeave={e => e.currentTarget.style.color='#d1d1d6'}>✕</button>
-        </div>
+    <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:6, background:'#f9f9fb', border:'0.5px solid #efefef', borderRadius:10, padding:'7px 9px' }}>
+      <select value={r.tipo}
+        onChange={e => onChange({ ...r, tipo: e.target.value })}
+        style={{ flex:2, background:'transparent', border:'none', fontSize:12, color:'#1d1d1f', fontFamily:'inherit', outline:'none', cursor:'pointer' }}>
+        {tipos.map(t => <option key={t}>{t}</option>)}
+      </select>
+      <div style={{ display:'flex', alignItems:'center', gap:4 }}>
+        <button onClick={() => onChange({ ...r, cantidad: Math.max(0, r.cantidad - 1) })}
+          style={{ width:24,height:24,borderRadius:6,border:'0.5px solid #e5e5ea',background:'#fff',cursor:'pointer',fontSize:13,color:'#636366',display:'flex',alignItems:'center',justifyContent:'center' }}>−</button>
+        <input type="number" min="0" value={r.cantidad}
+          onChange={e => onChange({ ...r, cantidad: Math.max(0, parseInt(e.target.value) || 0) })}
+          style={{ width:44,textAlign:'center',border:'0.5px solid #e5e5ea',borderRadius:6,padding:'3px 0',fontSize:13,fontWeight:700,color:'#1a2744',fontFamily:'inherit',outline:'none',background:'#fff' }}/>
+        <button onClick={() => onChange({ ...r, cantidad: r.cantidad + 1 })}
+          style={{ width:24,height:24,borderRadius:6,border:'none',background:'#1a2744',cursor:'pointer',fontSize:13,color:'#fff',display:'flex',alignItems:'center',justifyContent:'center' }}>+</button>
+      </div>
+      <button onClick={onEliminar}
+        style={{ background:'none',border:'none',color:'#d1d1d6',cursor:'pointer',fontSize:12,padding:'2px' }}
+        onMouseEnter={e => e.currentTarget.style.color='#e24b4a'}
+        onMouseLeave={e => e.currentTarget.style.color='#d1d1d6'}>✕</button>
+    </div>
+  )
+}
+
+function SeccionRecursos({ label, categoria, tipos, lista, onChange }) {
+  const items = lista.filter(r => r.categoria === categoria)
+
+  function handleChange(idx, updated) {
+    const nuevos = lista.map((r, i) => {
+      const itemIdx = lista.filter(x => x.categoria === categoria).indexOf(lista.filter(x => x.categoria === categoria)[idx])
+      return i === lista.indexOf(items[idx]) ? updated : r
+    })
+    // recalculo más simple: reemplazar el item correcto por categoría
+    const globales = [...lista]
+    const posGlobal = lista.indexOf(items[idx])
+    globales[posGlobal] = updated
+    onChange(globales)
+  }
+
+  function handleEliminar(idx) {
+    const posGlobal = lista.indexOf(items[idx])
+    onChange(lista.filter((_, i) => i !== posGlobal))
+  }
+
+  function handleAgregar() {
+    onChange([...lista, { tipo: tipos[0], cantidad: 0, categoria }])
+  }
+
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8 }}>
+        <div style={{ fontSize:10, fontWeight:700, color:'#aeaeb2', letterSpacing:'0.06em' }}>{label}</div>
+        {items.length > 0 && (
+          <span style={{ fontSize:9, fontWeight:700, background:'#f0f0f5', color:'#8e8e93', padding:'1px 6px', borderRadius:20 }}>{items.length}</span>
+        )}
+      </div>
+      {items.length === 0 && (
+        <div style={{ fontSize:12, color:'#c7c7cc', textAlign:'center', padding:'8px 0', fontStyle:'italic' }}>Sin {label.toLowerCase()} asignados</div>
+      )}
+      {items.map((r, i) => (
+        <RecursoRow key={i} r={r} tipos={tipos}
+          onChange={updated => {
+            const posGlobal = lista.indexOf(items[i])
+            const nuevos = [...lista]
+            nuevos[posGlobal] = updated
+            onChange(nuevos)
+          }}
+          onEliminar={() => {
+            const posGlobal = lista.indexOf(items[i])
+            onChange(lista.filter((_, j) => j !== posGlobal))
+          }}
+        />
       ))}
-      <button onClick={() => onChange([...recursos, { tipo:'Cono', cantidad:0 }])}
-        style={{ width:'100%',padding:'8px',border:'1px dashed #d1d1d6',borderRadius:10,background:'none',color:'#8e8e93',fontSize:12,cursor:'pointer' }}
+      <button onClick={handleAgregar}
+        style={{ width:'100%', padding:'7px', border:'1px dashed #d1d1d6', borderRadius:10, background:'none', color:'#8e8e93', fontSize:11, cursor:'pointer', marginTop: items.length > 0 ? 2 : 0 }}
         onMouseEnter={e => e.currentTarget.style.background='#f9f9fb'}
         onMouseLeave={e => e.currentTarget.style.background='none'}>
-        + Agregar material
+        + Agregar {label === 'VEHÍCULOS' ? 'vehículo' : 'elemento'}
+      </button>
+    </div>
+  )
+}
+
+function PanelRecursos({ recursos, onChange, onGuardar, guardando }) {
+  return (
+    <div>
+      <SeccionRecursos label="VEHÍCULOS"  categoria="vehiculo" tipos={VEHICULOS_TIPOS} lista={recursos} onChange={onChange} />
+      <div style={{ height:'0.5px', background:'#ebebeb', margin:'4px 0 16px' }}/>
+      <SeccionRecursos label="ELEMENTOS"  categoria="elemento" tipos={ELEMENTOS_TIPOS} lista={recursos} onChange={onChange} />
+      <button onClick={onGuardar} disabled={guardando}
+        style={{ width:'100%', padding:'9px', borderRadius:11, border:'none', background: guardando ? '#aeaeb2' : '#1a2744', color:'#fff', fontSize:12, fontWeight:700, cursor: guardando ? 'default' : 'pointer', marginTop:4 }}>
+        {guardando ? 'Guardando…' : 'Guardar recursos'}
       </button>
     </div>
   )
@@ -479,7 +542,7 @@ export default function SidebarFases({
   onCrearFase, onEliminarFase, onActualizarFase,
   onCrearTurno, onEditarTurno, onEliminarTurno,
   onDuplicarFase, onMoverFase,
-  onRecursosChange, onActualizarDotacion,
+  onRecursosChange, onGuardarRecursos, guardandoRecursos,
   readOnly,
 }) {
   const [tab, setTab]                     = useState('fases')
@@ -595,7 +658,7 @@ export default function SidebarFases({
           </>
         )}
 
-        {tab === 'recursos' && <PanelRecursos recursos={recursos} onChange={onRecursosChange}/>}
+        {tab === 'recursos' && <PanelRecursos recursos={recursos} onChange={onRecursosChange} onGuardar={onGuardarRecursos} guardando={guardandoRecursos}/>}
       </div>
 
       {modalTurno && (

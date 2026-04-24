@@ -24,13 +24,13 @@ async function getLista(estado) {
   const params = [];
   let filtro = '';
   if (estado) { params.push(estado); filtro = ' AND sa.estado = $' + params.length; }
-  const sql = "SELECT sa.*, oa.nombre AS os_nombre, oa.evento_motivo AS os_evento_motivo, oa.horario_desde, oa.horario_hasta, b.nombre AS base_nombre, p.nombre_completo AS creado_por_nombre, (SELECT COUNT(*) FROM sa_estructura e WHERE e.servicio_id = sa.id) AS total_asignados, (SELECT COUNT(*) FROM sa_convocatoria c JOIN sa_estructura e ON c.estructura_id = e.id WHERE e.servicio_id = sa.id AND c.estado = 'confirmado') AS total_confirmados FROM servicios_adicionales sa LEFT JOIN os_adicional oa ON sa.os_adicional_id = oa.id LEFT JOIN bases b ON oa.base_id = b.id LEFT JOIN profiles p ON sa.creado_por = p.id WHERE 1=1" + filtro + ' ORDER BY sa.created_at DESC';
+  const sql = "SELECT sa.*, oa.nombre AS os_nombre, oa.evento_motivo AS os_evento_motivo, oa.horario_desde, oa.horario_hasta, oa.dotacion_agentes, oa.dotacion_supervisores, oa.dotacion_motorizados, b.nombre AS base_nombre, p.nombre_completo AS creado_por_nombre, (SELECT COUNT(*) FROM sa_estructura e WHERE e.servicio_id = sa.id) AS total_asignados, (SELECT COUNT(*) FROM sa_convocatoria c JOIN sa_estructura e ON c.estructura_id = e.id WHERE e.servicio_id = sa.id AND c.estado = 'confirmado') AS total_confirmados FROM servicios_adicionales sa LEFT JOIN os_adicional oa ON sa.os_adicional_id = oa.id LEFT JOIN bases b ON oa.base_id = b.id LEFT JOIN profiles p ON sa.creado_por = p.id WHERE 1=1" + filtro + ' ORDER BY sa.created_at DESC';
   return (await pool.query(sql, params)).rows;
 }
 
 async function crearServicio(client, { os_adicional_id, observaciones, creado_por, os }) {
   const saRes = await client.query(
-    "INSERT INTO servicios_adicionales (os_adicional_id, observaciones, creado_por, estado) VALUES ($1,$2,$3,'en_gestion') RETURNING *",
+    "INSERT INTO servicios_adicionales (os_adicional_id, observaciones, creado_por, estado) VALUES ($1,$2,$3,'pendiente') RETURNING *",
     [os_adicional_id, observaciones || null, creado_por]
   );
   const sa = saRes.rows[0];
@@ -41,7 +41,24 @@ async function crearServicio(client, { os_adicional_id, observaciones, creado_po
 
 // ── Individual ────────────────────────────────────────────────
 async function getById(id) {
-  const r = await pool.query('SELECT sa.*, oa.nombre AS os_nombre, oa.evento_motivo AS os_evento_motivo, oa.horario_desde, oa.horario_hasta, oa.dotacion_agentes, oa.dotacion_supervisores, oa.dotacion_motorizados, b.nombre AS base_nombre FROM servicios_adicionales sa LEFT JOIN os_adicional oa ON sa.os_adicional_id = oa.id LEFT JOIN bases b ON oa.base_id = b.id WHERE sa.id = $1', [id]);
+  const r = await pool.query(`
+    SELECT sa.*,
+      oa.nombre AS os_nombre, oa.evento_motivo AS os_evento_motivo,
+      oa.horario_desde, oa.horario_hasta,
+      oa.dotacion_agentes, oa.dotacion_supervisores, oa.dotacion_motorizados,
+      b.nombre AS base_nombre,
+      p.nombre_completo AS creado_por_nombre,
+      COALESCE(json_agg(DISTINCT oaf.fecha ORDER BY oaf.fecha) FILTER (WHERE oaf.fecha IS NOT NULL), '[]') AS fechas_os
+    FROM servicios_adicionales sa
+    LEFT JOIN os_adicional oa ON sa.os_adicional_id = oa.id
+    LEFT JOIN bases b ON oa.base_id = b.id
+    LEFT JOIN profiles p ON sa.creado_por = p.id
+    LEFT JOIN os_adicional_fechas oaf ON oaf.os_adicional_id = oa.id
+    WHERE sa.id = $1
+    GROUP BY sa.id, oa.nombre, oa.evento_motivo, oa.horario_desde, oa.horario_hasta,
+             oa.dotacion_agentes, oa.dotacion_supervisores, oa.dotacion_motorizados,
+             b.nombre, p.nombre_completo
+  `, [id]);
   if (!r.rows[0]) return null;
   const reqs = await pool.query('SELECT * FROM sa_requerimientos WHERE servicio_id = $1 ORDER BY rol', [id]);
   return { ...r.rows[0], requerimientos: reqs.rows };
@@ -57,12 +74,33 @@ async function updateServicio(id, body) {
 }
 
 async function avanzarEstado(client, id) {
-  const map = { en_gestion: 'convocado', convocado: 'cerrado' };
+  const map = { pendiente: 'en_gestion', convocado: 'cerrado', en_curso: 'cerrado' };
   const cur = await client.query('SELECT estado, os_adicional_id FROM servicios_adicionales WHERE id = $1', [id]);
   if (!cur.rows[0]) return { notFound: true };
-  const sig = map[cur.rows[0].estado];
+  const estadoActual = cur.rows[0].estado;
+  const sig = map[estadoActual];
   if (!sig) return { badState: true };
-  const r = await client.query('UPDATE servicios_adicionales SET estado = $1, updated_at = NOW() WHERE id = $2 RETURNING *', [sig, id]);
+
+  // Bloquear cierre si hay agentes sin presentismo registrado
+  if (sig === 'cerrado') {
+    const sinPresent = await client.query(`
+      SELECT COUNT(*) AS n
+      FROM sa_estructura e
+      JOIN sa_turnos t ON t.id = e.turno_id
+      LEFT JOIN sa_convocatoria c ON c.estructura_id = e.id
+      LEFT JOIN sa_presentismo pr ON pr.agente_id = e.agente_id AND pr.turno_id = e.turno_id
+      WHERE e.servicio_id = $1
+        AND (e.tipo_convocatoria = 'ordinario' OR (e.tipo_convocatoria = 'adicional' AND c.estado = 'confirmado'))
+        AND pr.id IS NULL
+    `, [id]);
+    if (parseInt(sinPresent.rows[0].n) > 0)
+      return { presentismoIncompleto: true, faltantes: parseInt(sinPresent.rows[0].n) };
+  }
+
+  const r = await client.query(
+    'UPDATE servicios_adicionales SET estado = $1, updated_at = NOW() WHERE id = $2 RETURNING *',
+    [sig, id]
+  );
   if (sig === 'cerrado' && cur.rows[0].os_adicional_id)
     await client.query("UPDATE os_adicional SET estado = 'cumplida', updated_at = NOW() WHERE id = $1", [cur.rows[0].os_adicional_id]);
   return { row: r.rows[0] };
@@ -142,7 +180,19 @@ async function getPostulantes(servicioId, rol) {
   const params = [servicioId];
   let filtroRol = '';
   if (rol) { params.push(rol); filtroRol = ' AND sp.rol_solicitado = $' + params.length; }
-  return (await pool.query('SELECT sp.id, sp.agente_id, sp.rol_solicitado, sp.origen, sp.todos_los_turnos, sp.created_at, p.nombre_completo, p.legajo, p.role AS rol_ordinario, b.nombre AS base_nombre FROM sa_postulantes sp JOIN profiles p ON sp.agente_id = p.id LEFT JOIN bases b ON p.base_id = b.id WHERE sp.servicio_id = $1' + filtroRol + ' ORDER BY sp.todos_los_turnos DESC, sp.created_at', params)).rows;
+  return (await pool.query(`
+    SELECT sp.id, sp.agente_id, sp.rol_solicitado, sp.origen, sp.todos_los_turnos, sp.created_at,
+      p.nombre_completo, p.legajo, p.role AS rol_ordinario, b.nombre AS base_nombre,
+      EXISTS (
+        SELECT 1 FROM sa_sanciones
+        WHERE agente_id = p.id AND fecha_inicio <= CURRENT_DATE AND fecha_fin >= CURRENT_DATE
+      ) AS vetado
+    FROM sa_postulantes sp
+    JOIN profiles p ON sp.agente_id = p.id
+    LEFT JOIN bases b ON p.base_id = b.id
+    WHERE sp.servicio_id = $1${filtroRol}
+    ORDER BY sp.todos_los_turnos DESC, sp.created_at
+  `, params)).rows;
 }
 
 async function getPostulanteTurnos(postulante_id) {
@@ -185,7 +235,7 @@ async function updateConvocatoria(client, { cid, estado, userId, observaciones, 
   if (estado === 'confirmado') {
     const pendientes = await client.query("SELECT COUNT(*) FROM sa_convocatoria c JOIN sa_estructura e ON c.estructura_id = e.id WHERE e.servicio_id = $1 AND c.estado = 'pendiente'", [servicioId]);
     if (parseInt(pendientes.rows[0].count) === 0)
-      await client.query("UPDATE servicios_adicionales SET estado = 'convocado', updated_at = NOW() WHERE id = $1 AND estado IN ('pendiente', 'en_gestion')", [servicioId]);
+      await client.query("UPDATE servicios_adicionales SET estado = 'convocado', updated_at = NOW() WHERE id = $1 AND estado = 'en_gestion'", [servicioId]);
   }
   return r.rows[0];
 }
@@ -276,6 +326,73 @@ async function getTipoConvocatoria(agente_id, turnoId) {
   return (await pool.query('SELECT tipo_convocatoria FROM sa_estructura WHERE agente_id = $1 AND turno_id = $2', [agente_id, turnoId])).rows[0] || null;
 }
 
+// ── Recursos del servicio ─────────────────────────────────────
+async function getRecursosServicio(servicioId) {
+  // Trae los recursos de la OS adicional vinculada, cruzados con el estado SA
+  const { rows } = await pool.query(`
+    SELECT r.id, r.tipo, r.cantidad, r.descripcion, r.categoria,
+           COALESCE(e.estado, 'pendiente') AS estado,
+           e.observacion,
+           e.updated_at AS estado_updated_at
+    FROM servicios_adicionales sa
+    JOIN os_adicional_recursos r ON r.os_adicional_id = sa.os_adicional_id
+    LEFT JOIN sa_recursos_estado e ON e.servicio_id = sa.id AND e.recurso_id = r.id
+    WHERE sa.id = $1
+    ORDER BY r.categoria, r.tipo
+  `, [servicioId]);
+  return rows;
+}
+
+async function updateRecursoEstado(servicioId, recursoId, { estado, observacion }, userId) {
+  const { rows: [row] } = await pool.query(`
+    INSERT INTO sa_recursos_estado (servicio_id, recurso_id, estado, observacion, updated_by, updated_at)
+    VALUES ($1, $2, $3, $4, $5, NOW())
+    ON CONFLICT (servicio_id, recurso_id)
+    DO UPDATE SET estado = $3, observacion = $4, updated_by = $5, updated_at = NOW()
+    RETURNING *
+  `, [servicioId, recursoId, estado, observacion ?? null, userId ?? null]);
+  return row;
+}
+
+async function getNomina(periodo) {
+  const rows = await pool.query(`
+    SELECT
+      p.id,
+      p.nombre_completo,
+      p.legajo,
+      p.role,
+      b.nombre AS base_nombre,
+      COALESCE((
+        SELECT SUM(modulos) FROM sa_modulos_agente
+        WHERE agente_id = p.id AND periodo = $1
+      ), 0)::int AS modulos_periodo,
+      COALESCE((
+        SELECT SUM(puntos) FROM sa_penalizaciones
+        WHERE agente_id = p.id AND activa = true
+          AND periodo_inicio <= $1 AND periodo_fin >= $1
+      ), 0)::int AS puntos_penalizacion,
+      (
+        SELECT COUNT(*) FROM sa_penalizaciones
+        WHERE agente_id = p.id AND tipo = 'ausencia' AND activa = true
+          AND periodo_inicio <= $1 AND periodo_fin >= $1
+      )::int AS ausencias_periodo,
+      (
+        SELECT COUNT(DISTINCT servicio_id) FROM sa_estructura WHERE agente_id = p.id
+      )::int AS servicios_total,
+      EXISTS (
+        SELECT 1 FROM sa_sanciones
+        WHERE agente_id = p.id
+          AND fecha_inicio <= CURRENT_DATE AND fecha_fin >= CURRENT_DATE
+      ) AS vetado
+    FROM profiles p
+    LEFT JOIN bases b ON p.base_id = b.id
+    WHERE p.activo = true
+      AND p.role IN ('agente', 'supervisor', 'chofer', 'coordinador', 'jefe_base')
+    ORDER BY p.nombre_completo
+  `, [periodo]);
+  return rows.rows;
+}
+
 module.exports = {
   getConfig, updateConfig, getLista, crearServicio, getById, updateServicio, avanzarEstado, updateRequerimientos,
   getTurnos, crearTurno, updateTurno, deleteTurno, getTurnoHoras,
@@ -285,4 +402,6 @@ module.exports = {
   getPresentismo, updateFlyer, getFlyerData, getModulosDia, getToken, upsertToken, patchToken,
   getScoringAgente, getModulosAgente, getPenalizacionesAgente, getPenalizacionCount,
   getConfigValor, getModulosDiaAgente, upsertPresentismo, upsertModulosAgente, insertPenalizacion, getTipoConvocatoria,
+  getRecursosServicio, updateRecursoEstado,
+  getNomina,
 };

@@ -11,8 +11,9 @@ export function useOSAdicional(osInicial) {
   const [turnos,   setTurnos]   = useState(osInicial?.turnos   || [])
   const [fases,    setFases]    = useState(osInicial?.fases    || [])
   const [recursos, setRecursos] = useState(osInicial?.recursos || [])
-  const [saving,   setSaving]   = useState(false)
-  const [error,    setError]    = useState(null)
+  const [saving,            setSaving]            = useState(false)
+  const [guardandoRecursos, setGuardandoRecursos] = useState(false)
+  const [error,             setError]             = useState(null)
 
   const cargar = useCallback(async (id) => {
     try {
@@ -138,14 +139,24 @@ export function useOSAdicional(osInicial) {
 
   const actualizarRecursos = useCallback((nuevos) => setRecursos(nuevos), [])
 
+  const guardarRecursos = useCallback(async (nuevos) => {
+    if (!os?.id) return
+    setGuardandoRecursos(true)
+    try {
+      const result = await api.put('/api/os-adicional/' + os.id + '/recursos', { recursos: nuevos })
+      setRecursos(result)
+    } catch (e) { setError(e.message) }
+    setGuardandoRecursos(false)
+  }, [os?.id])
+
   return {
-    os, turnos, fases, recursos, saving, error,
+    os, turnos, fases, recursos, saving, guardandoRecursos, error,
     cargar,
     actualizarCabecera, cambiarEstado,
     crearTurno, editarTurno, eliminarTurno,
     crearFase, eliminarFase, duplicarFase, moverFase,
     crearElemento, actualizarElemento, eliminarElemento,
-    actualizarRecursos,
+    actualizarRecursos, guardarRecursos,
     setOS, setTurnos, setFases, setRecursos,
   }
 }

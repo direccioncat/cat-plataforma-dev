@@ -22,6 +22,7 @@ const server = http.createServer(app);
 const origenesPermitidos = [
   'http://localhost:5173',
   'http://localhost:5174',
+  'http://localhost:5175',
   'http://localhost:3000',
 ];
 
@@ -146,6 +147,33 @@ async function checkVigenciaCumplida() {
 
 setInterval(checkVigenciaCumplida, 5 * 60 * 1000);
 checkVigenciaCumplida();
+
+// Pasar servicios adicionales a "en_curso" cuando arranca el primer turno
+async function checkServiciosEnCurso() {
+  try {
+    const result = await pool.query(`
+      UPDATE servicios_adicionales sa
+      SET estado = 'en_curso', updated_at = NOW()
+      WHERE sa.estado = 'convocado'
+        AND EXISTS (
+          SELECT 1 FROM sa_turnos t
+          WHERE t.servicio_id = sa.id
+            AND (t.fecha + t.hora_inicio) <= NOW()
+        )
+      RETURNING id, os_adicional_id
+    `);
+    if (result.rows.length > 0) {
+      result.rows.forEach(r => {
+        console.log(`[job] Servicio adicional #${r.id} → en_curso (primer turno iniciado)`);
+      });
+    }
+  } catch (err) {
+    console.error('[job] Error en checkServiciosEnCurso:', err.message);
+  }
+}
+
+setInterval(checkServiciosEnCurso, 60 * 1000); // cada minuto
+checkServiciosEnCurso();
 
 // Limpiar refresh tokens expirados cada hora
 setInterval(limpiarTokensExpirados, 60 * 60 * 1000);

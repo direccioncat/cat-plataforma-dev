@@ -179,7 +179,7 @@ function BannerEstado({ os }) {
 export default function OSAdicional({ osId: osIdProp, fechasIniciales = [], onVolver }) {
   const { profile } = useAuth()
   const hook = useOSAdicional(null)
-  const { os, turnos, fases, recursos, cargar, actualizarCabecera, cambiarEstado, crearTurno, editarTurno, eliminarTurno, crearFase, eliminarFase, duplicarFase, moverFase, crearElemento, actualizarElemento, eliminarElemento, actualizarRecursos, setOS, setFases, setRecursos } = hook
+  const { os, turnos, fases, recursos, guardandoRecursos, cargar, actualizarCabecera, cambiarEstado, crearTurno, editarTurno, eliminarTurno, crearFase, eliminarFase, duplicarFase, moverFase, crearElemento, actualizarElemento, eliminarElemento, actualizarRecursos, guardarRecursos, setOS, setFases, setRecursos } = hook
 
   const [cargando,      setCargando]      = useState(true)
   const [creando,       setCreando]       = useState(false)
@@ -412,6 +412,8 @@ export default function OSAdicional({ osId: osIdProp, fechasIniciales = [], onVo
           onDuplicarFase={duplicarFase}
           onMoverFase={moverFase}
           onRecursosChange={actualizarRecursos}
+          onGuardarRecursos={() => guardarRecursos(recursos)}
+          guardandoRecursos={guardandoRecursos}
           onActualizarDotacion={actualizarCabecera}
           readOnly={readOnly}
         />

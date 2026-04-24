@@ -99,4 +99,6 @@ async function crearElemento(faseId, body) { return await m.crearElemento(faseId
 async function actualizarElemento(elId, body) { return await m.actualizarElemento(elId, body); }
 async function eliminarElemento(elId) { await m.eliminarElemento(elId); }
 
-module.exports = { listarOs, obtenerOs, crearOs, actualizarOs, enviarAValidacion, validarOs, rechazarOs, cambiarEstado, eliminarOs, getTurnos, crearTurno, actualizarTurno, eliminarTurno, crearFase, duplicarFase, moverFase, actualizarFase, eliminarFase, crearElemento, actualizarElemento, eliminarElemento };
+async function guardarRecursos(osId, recursos) { return await m.sincronizarRecursos(osId, recursos); }
+
+module.exports = { listarOs, obtenerOs, crearOs, actualizarOs, enviarAValidacion, validarOs, rechazarOs, cambiarEstado, eliminarOs, getTurnos, crearTurno, actualizarTurno, eliminarTurno, crearFase, duplicarFase, moverFase, actualizarFase, eliminarFase, crearElemento, actualizarElemento, eliminarElemento, guardarRecursos };

@@ -6,13 +6,16 @@ import SALista from './SALista'
 import SADetalle from './SADetalle'
 import SASanciones from './SASanciones'
 import SAConfigScoring from './SAConfigScoring'
+import SANomina from './SANomina'
 import { useAuth } from '../../context/AuthContext'
 
 const ROLES_CONFIG = ['admin', 'gerencia', 'director']
 
 const ESTADO_LABELS = {
+  pendiente:   { label: 'Pendiente',    color: '#c47f00', bg: '#fff8e6', text: '#7a4f00' },
   en_gestion:  { label: 'En gestión',   color: '#185fa5', bg: '#e8f0fe', text: '#185fa5' },
   convocado:   { label: 'Convocado',    color: '#0f6e56', bg: '#e8faf2', text: '#0f6e56' },
+  en_curso:    { label: 'En curso',     color: '#6f42c1', bg: '#f0ebff', text: '#4a1a9e' },
   cerrado:     { label: 'Cerrado',      color: '#aeaeb2', bg: '#f5f5f7', text: '#636366' },
 }
 
@@ -49,6 +52,7 @@ export default function ServiciosAdicionales({ servicioId, onVolver }) {
         <div style={{ display: 'flex', gap: 4 }}>
           {[
             { key: 'servicios',     label: 'Servicios' },
+            { key: 'nomina',        label: 'Nómina' },
             { key: 'sanciones',     label: 'Sanciones' },
             ...(puedeConfigurar ? [{ key: 'configuracion', label: 'Configuración' }] : []),
           ].map(t => (
@@ -79,6 +83,7 @@ export default function ServiciosAdicionales({ servicioId, onVolver }) {
             sinHeader
           />
         )}
+        {seccion === 'nomina'        && <SANomina />}
         {seccion === 'sanciones'     && <SASanciones />}
         {seccion === 'configuracion' && <SAConfigScoring />}
       </div>

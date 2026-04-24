@@ -125,4 +125,14 @@ async function deleteElemento(req, res) {
   catch (err) { return E500(res, err, 'DELETE /elementos/:el_id'); }
 }
 
-module.exports = { getOs, getOsById, postOs, putOs, deleteOs, postEnviarValidacion, postValidar, postRechazar, postEstado, getTurnos, postTurno, putTurno, deleteTurno, postFase, postDuplicarFase, patchMoverFase, putFase, deleteFase, postElemento, putElemento, deleteElemento };
+// ── Recursos ──────────────────────────────────────────────────
+async function putRecursos(req, res) {
+  const { recursos } = req.body;
+  if (!Array.isArray(recursos)) return res.status(400).json({ error: 'recursos debe ser un array' });
+  try {
+    const result = await s.guardarRecursos(req.params.id, recursos);
+    return res.json(result);
+  } catch (err) { return E500(res, err, 'PUT /:id/recursos'); }
+}
+
+module.exports = { getOs, getOsById, postOs, putOs, deleteOs, postEnviarValidacion, postValidar, postRechazar, postEstado, getTurnos, postTurno, putTurno, deleteTurno, postFase, postDuplicarFase, patchMoverFase, putFase, deleteFase, postElemento, putElemento, deleteElemento, putRecursos };

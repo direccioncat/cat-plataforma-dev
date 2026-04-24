@@ -1,16 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import api from '../../lib/api'
+import { ROLES_OPERATIVOS } from '../../lib/rolesOperativos'
 
-const ROL_CONFIG = {
-  jefe_operativo: { label: 'Jefe Operativo', color: '#EF9F27', bg: '#FAEEDA', dot: '#EF9F27' },
-  coordinador:    { label: 'Coordinador',    color: '#D4537E', bg: '#FBEAF0', dot: '#D4537E' },
-  supervisor:     { label: 'Supervisor',     color: '#7F77DD', bg: '#EEEDFE', dot: '#7F77DD' },
-  infante:        { label: 'Infante',        color: '#1D9E75', bg: '#E1F5EE', dot: '#1D9E75' },
-  motorizado:     { label: 'Motorizado',     color: '#D85A30', bg: '#FAECE7', dot: '#D85A30' },
-  chofer:         { label: 'Chofer',         color: '#888780', bg: '#F1EFE8', dot: '#888780' },
-}
-
+const ROL_CONFIG = ROLES_OPERATIVOS
 const ROL_OPCIONES = Object.entries(ROL_CONFIG).map(([k, v]) => ({ value: k, label: v.label }))
 
 function prioInfo(p) {
@@ -262,11 +255,14 @@ export default function SATabPostulantes({ servicioId }) {
           {resultadosBusq.length > 0 && (
             <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: '#fff', borderRadius: 10, border: '0.5px solid #e5e5ea', zIndex: 100, boxShadow: '0 4px 20px rgba(0,0,0,0.1)', marginTop: 4, overflow: 'hidden' }}>
               {resultadosBusq.map(a => (
-                <div key={a.id} onClick={() => agregarManual(a)}
-                  style={{ padding: '10px 14px', cursor: 'pointer', fontSize: 13, borderBottom: '0.5px solid #f5f5f7', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
-                  onMouseEnter={e => e.currentTarget.style.background = '#f5f5f7'}
-                  onMouseLeave={e => e.currentTarget.style.background = '#fff'}>
-                  <span style={{ fontWeight: 600, color: '#1d1d1f' }}>{a.nombre_completo}</span>
+                <div key={a.id} onClick={() => !a.vetado && agregarManual(a)}
+                  style={{ padding: '10px 14px', cursor: a.vetado ? 'not-allowed' : 'pointer', fontSize: 13, borderBottom: '0.5px solid #f5f5f7', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: a.vetado ? '#fff5f5' : '#fff', opacity: a.vetado ? 0.8 : 1 }}
+                  onMouseEnter={e => e.currentTarget.style.background = a.vetado ? '#feecec' : '#f5f5f7'}
+                  onMouseLeave={e => e.currentTarget.style.background = a.vetado ? '#fff5f5' : '#fff'}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontWeight: 600, color: a.vetado ? '#c0392b' : '#1d1d1f' }}>{a.nombre_completo}</span>
+                    {a.vetado && <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 20, background: '#c0392b', color: '#fff' }}>SANCIONADO</span>}
+                  </span>
                   <span style={{ color: '#aeaeb2', fontSize: 12 }}>{a.legajo}</span>
                 </div>
               ))}
@@ -334,18 +330,21 @@ export default function SATabPostulantes({ servicioId }) {
 
             return (
               <div key={p.id}
-                style={{ display: 'grid', gridTemplateColumns: COLS, padding: '11px 16px', alignItems: 'center', borderTop: i === 0 ? 'none' : '0.5px solid #f5f5f7', background: i % 2 === 0 ? '#fff' : '#fafafa' }}
-                onMouseEnter={e => e.currentTarget.style.background = '#f5f9ff'}
-                onMouseLeave={e => e.currentTarget.style.background = i % 2 === 0 ? '#fff' : '#fafafa'}>
+                style={{ display: 'grid', gridTemplateColumns: COLS, padding: '11px 16px', alignItems: 'center', borderTop: i === 0 ? 'none' : '0.5px solid #f5f5f7', background: p.vetado ? '#fff5f5' : i % 2 === 0 ? '#fff' : '#fafafa' }}
+                onMouseEnter={e => e.currentTarget.style.background = p.vetado ? '#feecec' : '#f5f9ff'}
+                onMouseLeave={e => e.currentTarget.style.background = p.vetado ? '#fff5f5' : i % 2 === 0 ? '#fff' : '#fafafa'}>
 
                 <span style={{ fontSize: 11, color: '#c7c7cc', fontWeight: 600 }}>{i + 1}</span>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <div style={{ width: 34, height: 34, borderRadius: '50%', flexShrink: 0, background: prio.bg, border: `1.5px solid ${prio.color}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: prio.color }}>
+                  <div style={{ width: 34, height: 34, borderRadius: '50%', flexShrink: 0, background: p.vetado ? '#feecec' : prio.bg, border: `1.5px solid ${p.vetado ? '#c0392b' : prio.color}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: p.vetado ? '#c0392b' : prio.color }}>
                     {initials(p.nombre_completo)}
                   </div>
                   <div>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: '#1d1d1f' }}>{p.nombre_completo}</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: p.vetado ? '#c0392b' : '#1d1d1f' }}>{p.nombre_completo}</span>
+                      {p.vetado && <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 20, background: '#c0392b', color: '#fff', flexShrink: 0 }}>SANCIONADO</span>}
+                    </div>
                     <div style={{ fontSize: 11, color: '#aeaeb2' }}>{p.legajo} · {p.base_nombre}</div>
                   </div>
                 </div>

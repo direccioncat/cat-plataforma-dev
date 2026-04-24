@@ -4,8 +4,10 @@ import { ESTADO_LABELS } from './ServiciosAdicionales'
 
 const FILTROS = [
   { key: '',           label: 'Todos' },
+  { key: 'pendiente',  label: 'Pendientes' },
   { key: 'en_gestion', label: 'En gestión' },
   { key: 'convocado',  label: 'Convocados' },
+  { key: 'en_curso',   label: 'En curso' },
   { key: 'cerrado',    label: 'Cerrados' },
 ]
 
@@ -120,84 +122,95 @@ export default function SALista({ onSeleccionar, onVolver, sinHeader }) {
   )
 }
 
+const DOT_TIPOS = [
+  { key: 'dotacion_agentes',      label: 'Inf',  bg: '#eef1f8', color: '#1a2744' },
+  { key: 'dotacion_supervisores', label: 'Sup',  bg: '#e8f5ee', color: '#0a5c3a' },
+  { key: 'dotacion_motorizados',  label: 'Mot',  bg: '#f0ebff', color: '#5b21b6' },
+]
+
 function ServicioCard({ servicio: s, onClick }) {
-  const estado = ESTADO_LABELS[s.estado] || { label: s.estado, color: '#636366', bg: '#f5f5f7', text: '#636366' }
-  const totalReq = (s.dotacion_agentes || 0) + (s.dotacion_supervisores || 0) + (s.dotacion_motorizados || 0)
+  const estado      = ESTADO_LABELS[s.estado] || { label: s.estado, color: '#636366', bg: '#f5f5f7', text: '#636366' }
+  const dotItems    = DOT_TIPOS.filter(d => (s[d.key] || 0) > 0)
+  const totalReq    = dotItems.reduce((sum, d) => sum + (s[d.key] || 0), 0)
+  const asignados   = parseInt(s.total_asignados) || 0
+  const confirmados = parseInt(s.total_confirmados) || 0
+  const base        = totalReq > 0 ? totalReq : asignados
+  const pct         = base > 0 ? Math.min(100, Math.round(confirmados / base * 100)) : 0
+  const barColor    = pct === 100 ? '#0f6e56' : pct >= 50 ? '#185fa5' : '#f5c800'
 
   return (
     <div onClick={onClick}
       style={{
         background: '#fff', borderRadius: 16, border: '0.5px solid #dde2ec',
-        padding: '18px 20px', cursor: 'pointer', transition: 'box-shadow 0.15s, transform 0.15s',
+        padding: '16px 18px', cursor: 'pointer', transition: 'box-shadow 0.15s, transform 0.15s',
         borderLeft: `4px solid ${estado.color}`,
         boxShadow: '0 1px 3px rgba(26,39,68,0.05)',
+        display: 'flex', flexDirection: 'column', gap: 0,
       }}
-      onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 4px 16px rgba(26,39,68,0.1)'; e.currentTarget.style.transform = 'translateY(-1px)' }}
+      onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 4px 16px rgba(26,39,68,0.10)'; e.currentTarget.style.transform = 'translateY(-1px)' }}
       onMouseLeave={e => { e.currentTarget.style.boxShadow = '0 1px 3px rgba(26,39,68,0.05)'; e.currentTarget.style.transform = 'translateY(0)' }}>
 
-      {/* Header card */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+      {/* Nombre + estado */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
         <div style={{ flex: 1, minWidth: 0, paddingRight: 10 }}>
           <div style={{ fontSize: 15, fontWeight: 700, color: '#1d1d1f', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {s.os_nombre || 'Sin nombre'}
           </div>
-          {s.os_evento_motivo && (
-            <div style={{ fontSize: 12, color: '#8e8e93', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {s.os_evento_motivo}
-            </div>
-          )}
         </div>
-        <span style={{
-          fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 8, whiteSpace: 'nowrap',
-          background: estado.bg, color: estado.text,
-        }}>
+        <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 7, whiteSpace: 'nowrap', background: estado.bg, color: estado.text, flexShrink: 0 }}>
           {estado.label}
         </span>
       </div>
 
-      {/* Datos */}
-      <div style={{ display: 'flex', gap: 16, marginBottom: 12 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: '#636366' }}>
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
-          </svg>
-          {formatFecha(s.fecha_servicio)}
+      {/* Evento/motivo */}
+      {s.os_evento_motivo && (
+        <div style={{ fontSize: 12, color: '#636366', marginBottom: 8, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {s.os_evento_motivo}
         </div>
+      )}
+
+      {/* Fila central: dotación + horario */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', margin: '8px 0 12px' }}>
+        {dotItems.map(d => (
+          <span key={d.key} style={{
+            fontSize: 12, fontWeight: 600, padding: '3px 9px', borderRadius: 20,
+            background: d.bg, color: d.color,
+          }}>
+            {s[d.key]} {d.label}
+          </span>
+        ))}
+        {s.modulos_calculados > 0 && (
+          <span style={{ fontSize: 12, fontWeight: 600, padding: '3px 9px', borderRadius: 20, background: '#f5f5f7', color: '#636366' }}>
+            {s.modulos_calculados} mód.
+          </span>
+        )}
         {s.horario_desde && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: '#636366' }}>
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: '#8e8e93', marginLeft: dotItems.length > 0 ? 'auto' : 0 }}>
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
             </svg>
-            {s.horario_desde?.slice(0,5)} – {s.horario_hasta?.slice(0,5)}
-          </div>
-        )}
-        {s.base_nombre && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: '#636366' }}>
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>
-            </svg>
-            {s.base_nombre}
-          </div>
+            {s.horario_desde.slice(0,5)} – {s.horario_hasta?.slice(0,5)}
+          </span>
         )}
       </div>
 
-      {/* Footer */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '0.5px solid #e8ecf4', paddingTop: 10 }}>
-        <div style={{ display: 'flex', gap: 12 }}>
-          {totalReq > 0 && (
-            <span style={{ fontSize: 12, color: '#636366' }}>
-              <span style={{ fontWeight: 700, color: '#1a2744' }}>{totalReq}</span> requeridos
-            </span>
-          )}
-          {s.total_confirmados > 0 && (
-            <span style={{ fontSize: 12, color: '#0f6e56', fontWeight: 600 }}>
-              ✓ {s.total_confirmados} confirmados
+      {/* Footer: barra de progreso — siempre visible */}
+      <div style={{ borderTop: '0.5px solid #eef1f6', paddingTop: 10, marginTop: 'auto' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: base > 0 ? 5 : 0 }}>
+          <span style={{ fontSize: 12, color: confirmados > 0 ? '#0f6e56' : '#aeaeb2', fontWeight: confirmados > 0 ? 600 : 400 }}>
+            {confirmados > 0 ? `✓ ${confirmados} confirmados` : asignados > 0 ? `${asignados} asignados` : 'Sin asignados aún'}
+          </span>
+          {base > 0 && (
+            <span style={{ fontSize: 11, color: '#aeaeb2', fontWeight: 600 }}>
+              {confirmados}/{base}
             </span>
           )}
         </div>
-        <span style={{ fontSize: 12, color: '#aeaeb2' }}>
-          {s.modulos_calculados ? `${s.modulos_calculados} módulos` : ''}
-        </span>
+        {base > 0 && (
+          <div style={{ height: 3, borderRadius: 2, background: '#eef1f6', overflow: 'hidden' }}>
+            <div style={{ width: pct + '%', height: '100%', borderRadius: 2, background: barColor, transition: 'width 0.3s' }}/>
+          </div>
+        )}
       </div>
     </div>
   )

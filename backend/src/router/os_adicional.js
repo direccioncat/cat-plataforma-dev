@@ -31,5 +31,6 @@ router.post('/:id/estado',           c.postEstado);
 router.get('/:id/turnos',            c.getTurnos);
 router.post('/:id/turnos',           c.postTurno);
 router.post('/:id/fases',            c.postFase);
+router.put('/:id/recursos',          c.putRecursos);
 
 module.exports = router;

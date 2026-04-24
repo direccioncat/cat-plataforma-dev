@@ -16,6 +16,7 @@ router.put('/config', authMiddleware, requireRole(...ROLES_CONFIG),  c.updateCon
 
 // ── Rutas fijas antes de /:id ─────────────────────────────────
 router.get('/modulos-dia',          authMiddleware, requireRole(...ROLES_LECTURA), c.getModulosDia);
+router.get('/nomina',               authMiddleware, requireRole(...ROLES_LECTURA), c.getNomina);
 router.get('/scoring/:agente_id',   authMiddleware, requireRole(...ROLES_LECTURA), c.getScoringAgente);
 
 // ── Colección ─────────────────────────────────────────────────
@@ -65,5 +66,9 @@ router.get('/:id/flyer-data', authMiddleware, requireRole(...ROLES_LECTURA),  c.
 router.get('/:id/convocatoria-token',   authMiddleware, requireRole(...ROLES_LECTURA),  c.getToken);
 router.post('/:id/convocatoria-token',  authMiddleware, requireRole(...ROLES_OPERADOR), c.upsertToken);
 router.patch('/:id/convocatoria-token', authMiddleware, requireRole(...ROLES_OPERADOR), c.patchToken);
+
+// ── Recursos ──────────────────────────────────────────────────
+router.get('/:id/recursos',                        authMiddleware, requireRole(...ROLES_LECTURA),  c.getRecursos);
+router.patch('/:id/recursos/:recurso_id/estado',   authMiddleware, requireRole(...ROLES_OPERADOR), c.patchRecursoEstado);
 
 module.exports = router;

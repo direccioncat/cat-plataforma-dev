@@ -122,6 +122,7 @@ async function upsertEstructura(req, res) {
   if (error) return res.status(400).json({ error: error.details[0].message });
   try {
     const result = await svc.upsertEstructura(req.params.id, req.params.tid, value);
+    if (result.error) return res.status(result.status).json({ error: result.error, vetado: result.vetado || false });
     res.status(201).json(result.data);
   } catch (e) { console.error(e); res.status(500).json({ error: 'Error interno' }); }
 }
@@ -178,6 +179,7 @@ async function crearPostulante(req, res) {
   if (error) return res.status(400).json({ error: error.details[0].message });
   try {
     const result = await svc.crearPostulante(req.params.id, value);
+    if (result.error) return res.status(result.status).json({ error: result.error, vetado: result.vetado || false });
     res.status(201).json(result.data);
   } catch (e) { res.status(500).json({ error: 'Error interno' }); }
 }
@@ -291,6 +293,26 @@ async function getScoringAgente(req, res) {
   } catch (e) { res.status(500).json({ error: 'Error interno' }); }
 }
 
+async function getNomina(req, res) {
+  try { res.json(await svc.getNomina(req.query.periodo)); }
+  catch (e) { console.error(e); res.status(500).json({ error: 'Error interno' }); }
+}
+
+async function getRecursos(req, res) {
+  try { return res.json(await svc.getRecursos(req.params.id)); }
+  catch (e) { console.error(e); res.status(500).json({ error: 'Error interno' }); }
+}
+
+async function patchRecursoEstado(req, res) {
+  const { estado, observacion } = req.body;
+  const ESTADOS = ['pendiente','solicitado','confirmado','no_disponible'];
+  if (!ESTADOS.includes(estado)) return res.status(400).json({ error: 'Estado inválido' });
+  try {
+    const r = await svc.patchRecursoEstado(req.params.id, req.params.recurso_id, { estado, observacion }, req.user?.id);
+    return res.json(r);
+  } catch (e) { console.error(e); res.status(500).json({ error: 'Error interno' }); }
+}
+
 module.exports = {
   getConfig, updateConfig,
   getLista, crearServicio,
@@ -304,4 +326,6 @@ module.exports = {
   updateFlyer, getFlyerData,
   getModulosDia, getToken, upsertToken, patchToken,
   getScoringAgente,
+  getRecursos, patchRecursoEstado,
+  getNomina,
 };

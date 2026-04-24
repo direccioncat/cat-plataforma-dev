@@ -1,24 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import api from '../../lib/api'
+import { ROLES_OPERATIVOS } from '../../lib/rolesOperativos'
 
-const ROL_LABELS = {
-  jefe_operativo: 'Jefe Operativo',
-  coordinador:    'Coordinador',
-  supervisor:     'Supervisor',
-  infante:        'Infante',
-  motorizado:     'Motorizado',
-  chofer:         'Chofer',
-}
-
-const ROL_CFG = {
-  jefe_operativo: { color: '#B45309', bg: '#FEF3C7', pill: '#FDE68A' },
-  coordinador:    { color: '#9D174D', bg: '#FCE7F3', pill: '#F9A8D4' },
-  supervisor:     { color: '#4338CA', bg: '#EEF2FF', pill: '#C7D2FE' },
-  infante:        { color: '#065F46', bg: '#ECFDF5', pill: '#6EE7B7' },
-  motorizado:     { color: '#92400E', bg: '#FFF7ED', pill: '#FCD34D' },
-  chofer:         { color: '#374151', bg: '#F9FAFB', pill: '#D1D5DB' },
-}
+const ROL_LABELS = Object.fromEntries(Object.entries(ROLES_OPERATIVOS).map(([k, v]) => [k, v.label]))
+const ROL_CFG    = Object.fromEntries(Object.entries(ROLES_OPERATIVOS).map(([k, v]) => [k, { color: v.color, bg: v.bg, pill: v.pill }]))
 
 const ESTADO_CFG = {
   pendiente:   { label: 'Pendiente',  color: '#6B7280', bg: '#F3F4F6', dot: '#9CA3AF' },
