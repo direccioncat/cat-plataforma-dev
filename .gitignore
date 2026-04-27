@@ -1,0 +1,8 @@
+node_modules/
+.env
+uploads/
+*.log
+.env.example
+*.bat
+*.sql
+subir_frontend_github.js
