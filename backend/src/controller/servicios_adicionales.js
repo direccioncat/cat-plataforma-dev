@@ -153,7 +153,7 @@ async function registrarPresentismo(req, res) {
   const { error, value } = presentismoSchema.validate(req.body);
   if (error) return res.status(400).json({ error: error.details[0].message });
   try {
-    const result = await svc.registrarPresentismo(req.params.id, req.params.tid, value.registros, req.user.id);
+    const result = await svc.registrarPresentismo(req.params.id, req.params.tid, value.registros, req.user.id, req.user.role);
     if (result.error) return res.status(result.status).json({ error: result.error });
     res.json(result.data);
   } catch (e) { console.error(e); res.status(500).json({ error: 'Error interno' }); }

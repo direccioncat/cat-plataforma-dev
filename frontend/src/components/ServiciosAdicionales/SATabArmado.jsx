@@ -124,15 +124,46 @@ function TurnoColumna({turno,estructura,onQuitar,onCambiarRol,onAutoAsignar,auto
     </div>)
 }
 
+function BadgeTip({children,tip,style:s={}}) {
+  const [show,setShow]=useState(false)
+  const [pos,setPos]=useState({top:0,left:0})
+  const ref=useRef(null)
+  function onEnter(){
+    if(!ref.current)return
+    const r=ref.current.getBoundingClientRect()
+    setPos({top:r.top-34,left:r.left+r.width/2})
+    setShow(true)
+  }
+  return(<>
+    <div ref={ref} onMouseEnter={onEnter} onMouseLeave={()=>setShow(false)} style={{display:'inline-flex',...s}}>
+      {children}
+    </div>
+    {show&&createPortal(
+      <div style={{position:'fixed',top:pos.top,left:pos.left,transform:'translateX(-50%)',zIndex:9999,
+        background:'#1d1d1f',color:'#fff',fontSize:11,padding:'5px 10px',borderRadius:7,
+        whiteSpace:'nowrap',pointerEvents:'none',boxShadow:'0 2px 12px rgba(0,0,0,0.2)',lineHeight:1.5}}>
+        {tip}
+      </div>,document.body
+    )}
+  </>)
+}
+
 function PostulanteRow({p,selected,turnosAsignado,onClick,limiteDiario}) {
   const pi=prioInfo(p),[hover,setHover]=useState(false),yaA=turnosAsignado>0,mods=p.modulos_mes||0
+  const pens=p.penalizaciones_activas||0
   const rolLabel=(ROLES[mapearRol(p.rol_solicitado)]||ROLES.infante).label
   const vetado=p.vetado
+
+  // Color del badge de módulos según cantidad
+  const modColor=mods===0?{bg:'#f0f0f5',color:'#8e8e93'}:mods===1?{bg:'#FEF3C7',color:'#92400E'}:{bg:'#FEE2E2',color:'#991B1B'}
+
   return(<div onClick={vetado?undefined:onClick} onMouseEnter={()=>setHover(true)} onMouseLeave={()=>setHover(false)}
     style={{display:'flex',alignItems:'center',gap:8,padding:'7px 10px',borderRadius:10,
       background:vetado?'#fff5f5':selected?'#E6F1FB':hover?'#f9f9fb':'transparent',
-      opacity:vetado?0.7:yaA&&!selected?0.55:1,
+      opacity:vetado?0.7:yaA&&!selected?0.6:1,
       cursor:vetado?'not-allowed':'pointer',userSelect:'none',transition:'all 0.1s'}}>
+
+    {/* Checkbox */}
     <div style={{width:16,height:16,borderRadius:4,flexShrink:0,
       border:vetado?'1.5px solid #e0b0b0':selected?'1.5px solid #185FA5':'1.5px solid #d1d1d6',
       background:vetado?'#feecec':selected?'#185FA5':'transparent',
@@ -140,20 +171,57 @@ function PostulanteRow({p,selected,turnosAsignado,onClick,limiteDiario}) {
       {vetado&&<span style={{fontSize:8,color:'#c0392b',fontWeight:700,lineHeight:1}}>✕</span>}
       {!vetado&&selected&&<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>}
     </div>
+
+    {/* Avatar */}
     <div style={{width:30,height:30,borderRadius:'50%',flexShrink:0,
-      background:vetado?'#feecec':pi.bg,
-      border:`1.5px solid ${vetado?'#c0392b':pi.color}`,
+      background:vetado?'#feecec':pi.bg,border:`1.5px solid ${vetado?'#c0392b':pi.color}`,
       display:'flex',alignItems:'center',justifyContent:'center',fontSize:10,fontWeight:600,
       color:vetado?'#c0392b':pi.color}}>{initials(p.nombre_completo)}</div>
+
+    {/* Nombre + info */}
     <div style={{flex:1,minWidth:0}}>
       <div style={{fontSize:12,fontWeight:500,color:vetado?'#c0392b':'#1d1d1f',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{p.nombre_completo}</div>
       <div style={{fontSize:10,color:'#aeaeb2'}}>{p.legajo} · {rolLabel}</div>
     </div>
-    {vetado&&<span style={{fontSize:9,fontWeight:700,padding:'1px 6px',borderRadius:10,background:'#c0392b',color:'#fff',flexShrink:0,letterSpacing:'0.03em'}}>SANCIONADO</span>}
-    {!vetado&&mods>0&&<span style={{fontSize:9,fontWeight:600,padding:'1px 6px',borderRadius:10,flexShrink:0,background:pi.bg,color:pi.color,border:`1px solid ${pi.color}33`}}>{mods}m</span>}
-    {!vetado&&(p.penalizaciones_activas||0)>0&&<span style={{fontSize:10,color:'#A32D2D',flexShrink:0,fontWeight:700}} title="Penalizado">!</span>}
-    {!vetado&&yaA&&<span style={{fontSize:9,fontWeight:600,padding:'1px 6px',borderRadius:10,background:'#E6F1FB',color:'#185FA5',flexShrink:0}}>{turnosAsignado}t</span>}
-    {!vetado&&limiteDiario&&<span style={{fontSize:9,fontWeight:600,padding:'1px 6px',borderRadius:10,background:'#FFF4E5',color:'#BA7517',border:'1px solid #EFC97333',flexShrink:0}} title={`Límite de ${MAX_MODULOS_DIA} módulos diarios alcanzado`}>límite</span>}
+
+    {/* Badges compactos */}
+    <div style={{display:'flex',gap:3,alignItems:'center',flexShrink:0}}>
+      {vetado&&(
+        <span style={{fontSize:9,fontWeight:700,padding:'2px 6px',borderRadius:10,background:'#c0392b',color:'#fff',letterSpacing:'0.03em'}}>✕</span>
+      )}
+      {!vetado&&(
+        <BadgeTip tip={`${mods} módulo${mods!==1?'s':''} trabajados este mes`}>
+          <span style={{fontSize:10,fontWeight:600,padding:'1px 5px',borderRadius:8,
+            background:modColor.bg,color:modColor.color,lineHeight:'16px'}}>
+            {mods}m
+          </span>
+        </BadgeTip>
+      )}
+      {!vetado&&pens>0&&(
+        <BadgeTip tip={`${pens} penalización${pens!==1?'es':''} activa${pens!==1?'s':''} · prioridad reducida`}>
+          <span style={{fontSize:10,fontWeight:700,padding:'1px 5px',borderRadius:8,
+            background:'#FEE2E2',color:'#991B1B',lineHeight:'16px'}}>
+            {pens}⚠
+          </span>
+        </BadgeTip>
+      )}
+      {!vetado&&yaA&&(
+        <BadgeTip tip={`En ${turnosAsignado} turno${turnosAsignado!==1?'s':''} de este servicio`}>
+          <span style={{fontSize:10,fontWeight:600,padding:'1px 5px',borderRadius:8,
+            background:'#E6F1FB',color:'#185FA5',lineHeight:'16px'}}>
+            {turnosAsignado}✓
+          </span>
+        </BadgeTip>
+      )}
+      {!vetado&&limiteDiario&&(
+        <BadgeTip tip={`Límite de ${MAX_MODULOS_DIA} módulos diarios alcanzado`}>
+          <span style={{fontSize:10,padding:'1px 4px',borderRadius:8,
+            background:'#FFF4E5',lineHeight:'16px'}}>
+            ⛔
+          </span>
+        </BadgeTip>
+      )}
+    </div>
   </div>)
 }
 
@@ -198,6 +266,7 @@ export default function SATabArmado({servicioId}) {
   const [selected,setSelected]=useState(new Set())
   const [busqueda,setBusqueda]=useState('')
   const [turnoFiltro,setTurnoFiltro]=useState('')
+  const [rolFiltro,setRolFiltro]=useState('')
   const [confirmForzar,setConfirmForzar]=useState(null)
   const [autoAsignando,setAutoAsignando]=useState(false)
   const [autoResultado,setAutoResultado]=useState(null)
@@ -277,21 +346,42 @@ export default function SATabArmado({servicioId}) {
       }
 
       const turnosDeAgente={};for(const[,estr]of Object.entries(estrFresca))for(const e of estr)turnosDeAgente[e.agente_id]=(turnosDeAgente[e.agente_id]||0)+1
-      const disponibles=postulantes.filter(p=>{
+
+      // Filtros duros: vetado (sanción disciplinaria) + límite legal de módulos diarios
+      // Penalizaciones son solo criterio de ORDEN, no de exclusión
+      function esElegible(p){
         const pid=p.agente_id||p.id
         const dispTurno=p.todos_los_turnos||(p.turnos_ids||[]).includes(turnoId)
-        return!yaEnEsteTurno.has(pid)&&!p.vetado&&(p.penalizaciones_activas||0)===0&&dispTurno&&puedeAsignar(pid)
-      })
+        return!yaEnEsteTurno.has(pid)&&!p.vetado&&dispTurno&&puedeAsignar(pid)
+      }
+      const pool=postulantes.filter(esElegible)
+
+      // Cuántos quedaron fuera solo por el límite diario (para el modal de resultado)
       const bloqueadosLimite=postulantes.filter(p=>{
         const pid=p.agente_id||p.id
         const dispTurno=p.todos_los_turnos||(p.turnos_ids||[]).includes(turnoId)
-        return!yaEnEsteTurno.has(pid)&&!p.vetado&&(p.penalizaciones_activas||0)===0&&dispTurno&&!puedeAsignar(pid)
+        return!yaEnEsteTurno.has(pid)&&!p.vetado&&dispTurno&&!puedeAsignar(pid)
       }).length
 
-      function scorear(lista){return lista.map(p=>({...p,_pid:p.agente_id||p.id,_ts:turnosDeAgente[p.agente_id||p.id]||0,_m:p.modulos_mes||0})).sort((a,b)=>a._ts!==b._ts?a._ts-b._ts:a._m-b._m)}
+      // Ordenar: sin penalización primero, luego con penalización
+      // Dentro de cada grupo: menos turnos asignados → menos módulos acumulados
+      function scorear(lista){
+        return lista.map(p=>({
+          ...p,
+          _pid:p.agente_id||p.id,
+          _ts:turnosDeAgente[p.agente_id||p.id]||0,
+          _m:p.modulos_mes||0,
+          _pen:(p.penalizaciones_activas||0)>0?1:0,
+        })).sort((a,b)=>{
+          if(a._pen!==b._pen)return a._pen-b._pen
+          if(a._ts!==b._ts)return a._ts-b._ts
+          return a._m-b._m
+        })
+      }
+
       const usados=new Set(); let asignados=0; const detalle=[]
       for(const slot of slots){
-        const candidatos=scorear(disponibles.filter(p=>!usados.has(p.agente_id||p.id)&&slot.match.includes(p.rol_solicitado)))
+        const candidatos=scorear(pool.filter(p=>!usados.has(p.agente_id||p.id)&&slot.match.includes(p.rol_solicitado)))
         const tomar=candidatos.slice(0,slot.faltan); let slotAsignados=0
         for(const c of tomar){try{await api.post('/api/servicios-adicionales/'+servicioId+'/turnos/'+turnoId+'/estructura',{agente_id:c._pid,rol:mapearRol(c.rol_solicitado),jefe_id:null,origen:'scoring',tipo_convocatoria:'adicional'});asignados++;slotAsignados++;usados.add(c._pid);yaEnEsteTurno.add(c._pid);if(turnoFecha&&modulosTurno>0)modsDiaSnap[c._pid]=(modsDiaSnap[c._pid]||0)+modulosTurno}catch(e){console.error(e.message)}}
         detalle.push({rol:slot.rolAsignar,solicitados:slot.faltan,asignados:slotAsignados})
@@ -306,16 +396,26 @@ export default function SATabArmado({servicioId}) {
   const cambiarRol=useCallback(async(nodoId,nuevoRol)=>{const tid=Object.entries(estructuraPorTurno).find(([,estr])=>estr.some(e=>e.id===nodoId))?.[0];if(!tid)return;try{await api.patch('/api/servicios-adicionales/'+servicioId+'/turnos/'+tid+'/estructura/'+nodoId,{rol:nuevoRol});await recargarTurno(tid)}catch(e){console.error(e.message)}},[estructuraPorTurno,servicioId,recargarTurno])
   const toggleSelect=useCallback(pid=>{setSelected(prev=>{const n=new Set(prev);n.has(pid)?n.delete(pid):n.add(pid);return n})},[])
 
+  const rolesEnPool=useMemo(()=>{
+    const counts={}
+    for(const p of postulantes){
+      const r=p.rol_solicitado||'infante'
+      counts[r]=(counts[r]||0)+1
+    }
+    return counts
+  },[postulantes])
+
   const filtrados=useMemo(()=>{
     const q=busqueda.toLowerCase()
     let list=q?postulantes.filter(p=>(p.nombre_completo||'').toLowerCase().includes(q)||(p.legajo||'').includes(q)):postulantes
     if(turnoFiltro)list=list.filter(p=>p.todos_los_turnos||(p.turnos_ids||[]).includes(turnoFiltro))
+    if(rolFiltro)list=list.filter(p=>(p.rol_solicitado||'infante')===rolFiltro)
     const asig=new Set(); for(const estr of Object.values(estructuraPorTurno))for(const e of estr)asig.add(e.agente_id)
     return[...list].sort((a,b)=>{
       if(a.vetado!==b.vetado)return a.vetado?1:-1
       return(asig.has(a.agente_id||a.id)?1:0)-(asig.has(b.agente_id||b.id)?1:0)
     })
-  },[postulantes,busqueda,estructuraPorTurno,turnoFiltro])
+  },[postulantes,busqueda,estructuraPorTurno,turnoFiltro,rolFiltro])
 
   const selectAll=useCallback(()=>{const ids=filtrados.map(p=>p.agente_id||p.id);setSelected(prev=>{const n=new Set(prev);ids.every(id=>n.has(id))?ids.forEach(id=>n.delete(id)):ids.forEach(id=>n.add(id));return n})},[filtrados])
   const asignadoEn=useMemo(()=>{const m={};for(const[,estr]of Object.entries(estructuraPorTurno))for(const e of estr)m[e.agente_id]=(m[e.agente_id]||0)+1;return m},[estructuraPorTurno])
@@ -393,6 +493,33 @@ export default function SATabArmado({servicioId}) {
             <option value="">Todos los postulantes</option>
             {turnos.map((t,i)=><option key={t.id} value={t.id}>{t.nombre||('Turno '+(i+1))}{t.hora_inicio?' · '+String(t.hora_inicio).slice(0,5)+'hs':''}</option>)}
           </select>
+
+          {/* Pills de rol */}
+          {Object.keys(rolesEnPool).length>1&&(
+            <div style={{display:'flex',gap:4,marginTop:8,flexWrap:'wrap'}}>
+              {Object.entries(rolesEnPool).map(([rol,cant])=>{
+                const cfg=ROLES[rol]||ROLES.infante
+                const activo=rolFiltro===rol
+                return(
+                  <button key={rol} onClick={()=>setRolFiltro(activo?'':rol)}
+                    style={{display:'inline-flex',alignItems:'center',gap:4,padding:'3px 8px',borderRadius:20,border:'none',
+                      background:activo?cfg.dot:'#f0f0f5',
+                      color:activo?'#fff':'#636366',
+                      fontSize:10,fontWeight:600,cursor:'pointer',transition:'all 0.1s'}}>
+                    <span>{cfg.label}</span>
+                    <span style={{opacity:0.75}}>{cant}</span>
+                  </button>
+                )
+              })}
+              {rolFiltro&&(
+                <button onClick={()=>setRolFiltro('')}
+                  style={{padding:'3px 7px',borderRadius:20,border:'none',background:'transparent',color:'#aeaeb2',fontSize:10,cursor:'pointer'}}>
+                  ✕ todos
+                </button>
+              )}
+            </div>
+          )}
+
           <div style={{display:'flex',alignItems:'center',gap:6,marginTop:8}}>
             <div onClick={selectAll} style={{width:16,height:16,borderRadius:4,flexShrink:0,cursor:'pointer',border:todosSelFiltrados?'1.5px solid #185FA5':'1.5px solid #d1d1d6',background:todosSelFiltrados?'#185FA5':'transparent',display:'flex',alignItems:'center',justifyContent:'center'}}>{todosSelFiltrados&&<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>}</div>
             <span style={{fontSize:11,color:'#8e8e93',flex:1}}>{selected.size>0?selected.size+' seleccionado'+(selected.size>1?'s':''):'Seleccionar todos'}</span>

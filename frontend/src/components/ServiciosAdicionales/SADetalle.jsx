@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import api from '../../lib/api'
 import AppShell from '../AppShell'
+import { useAuth } from '../../context/AuthContext'
 import { ESTADO_LABELS } from './ServiciosAdicionales'
 import SATabPostulantes from './SATabPostulantes'
 import SATabArmado from './SATabArmado'
@@ -21,9 +22,13 @@ const TABS = [
   { key: 'presentismo',  label: 'Presentismo' },
 ]
 
+const ROLES_ADMIN = ['admin', 'gerencia', 'director']
+
 const ESTADO_SIGUIENTE = {
-  pendiente: { label: 'Iniciar gestión',  color: '#185fa5' },
-  en_curso:  { label: 'Cerrar servicio',  color: '#636366' },
+  pendiente:  { label: 'Iniciar gestión',  color: '#185fa5' },
+  en_gestion: { label: 'Iniciar gestión',  color: '#185fa5' },
+  convocado:  { label: 'Cerrar servicio',  color: '#636366' },
+  en_curso:   { label: 'Cerrar servicio',  color: '#636366' },
 }
 
 const ROL_LABELS = {
@@ -238,6 +243,8 @@ function SATabDetalle({ servicio: s }) {
 }
 
 export default function SADetalle({ servicioId, onVolver }) {
+  const { profile } = useAuth()
+  const userRole    = profile?.role ?? ''
   const [servicio,  setServicio]  = useState(null)
   const [cargando,  setCargando]  = useState(true)
   const [tabActiva, setTabActiva] = useState('detalle')
@@ -286,8 +293,11 @@ export default function SADetalle({ servicioId, onVolver }) {
     </AppShell>
   )
 
-  const estadoInfo = ESTADO_LABELS[servicio.estado] || { label: servicio.estado, bg: '#f5f5f7', text: '#636366', color: '#636366' }
-  const accionSig  = ESTADO_SIGUIENTE[servicio.estado]
+  const estadoInfo  = ESTADO_LABELS[servicio.estado] || { label: servicio.estado, bg: '#f5f5f7', text: '#636366', color: '#636366' }
+  const accionSig   = ESTADO_SIGUIENTE[servicio.estado]
+  const esCerrado   = servicio.estado === 'cerrado'
+  const puedeEditar = !esCerrado || ROLES_ADMIN.includes(userRole)
+  const bloqueado   = esCerrado && !puedeEditar
 
   return (
     <AppShell titulo="Servicios adicionales">
@@ -323,6 +333,14 @@ export default function SADetalle({ servicioId, onVolver }) {
             </button>
           )}
         </div>
+
+        {/* Banner servicio cerrado — admin */}
+        {esCerrado && puedeEditar && (
+          <div style={{ margin: '0 0 10px', padding: '8px 14px', background: '#fff8e6', border: '0.5px solid #f0c040', borderRadius: 10, fontSize: 12, color: '#854f0b', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span>🔓</span>
+            <span><strong>Modo administrador</strong> — Este servicio está cerrado. Estás viendo y operando como administrador.</span>
+          </div>
+        )}
 
         {/* Banner error avance */}
         {errorAvance && (
@@ -362,7 +380,22 @@ export default function SADetalle({ servicioId, onVolver }) {
       </div>
 
       {/* Contenido */}
-      <div style={{ flex: 1, overflow: 'auto', background: '#eef1f6' }}>
+      <div style={{ flex: 1, overflow: 'auto', background: '#eef1f6', position: 'relative' }}>
+
+        {/* Overlay de bloqueo para no-admins cuando el servicio está cerrado */}
+        {bloqueado && tabActiva !== 'detalle' && tabActiva !== 'presentismo' && (
+          <div style={{ position: 'absolute', inset: 0, zIndex: 50, background: 'rgba(238,241,246,0.88)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: 80 }}>
+            <div style={{ background: '#fff', borderRadius: 18, padding: '28px 36px', border: '0.5px solid #e0e4ed', boxShadow: '0 8px 32px rgba(0,0,0,0.10)', textAlign: 'center', maxWidth: 380 }}>
+              <div style={{ fontSize: 32, marginBottom: 12 }}>🔒</div>
+              <div style={{ fontSize: 16, fontWeight: 700, color: '#1d1d1f', marginBottom: 8 }}>Servicio cerrado</div>
+              <div style={{ fontSize: 13, color: '#8e8e93', lineHeight: 1.6 }}>
+                Este servicio fue finalizado y no permite modificaciones.<br/>
+                Contactá a un administrador si necesitás hacer cambios.
+              </div>
+            </div>
+          </div>
+        )}
+
         {tabActiva === 'detalle' && <SATabDetalle servicio={servicio} />}
         {tabActiva === 'turnos' && (
           <SATabTurnos servicioId={servicioId} onTurnoSelect={(turno) => { setTurnoActivo(turno); setTabActiva('armado') }} />
@@ -375,7 +408,7 @@ export default function SADetalle({ servicioId, onVolver }) {
         {tabActiva === 'convocatoria' && <SATabConvocatoria servicioId={servicioId} servicioNombre={servicio.os_nombre} />}
         {tabActiva === 'recursos' && <SATabRecursos servicioId={servicioId} />}
         {tabActiva === 'presentismo' && (
-          <SATabPresentismo servicioId={servicioId} modulosDefault={servicio.modulos_calculados} turnoActivo={turnoActivo} onCambiarTurno={(turno) => setTurnoActivo(turno)} onServicioCerrado={cargar} />
+          <SATabPresentismo servicioId={servicioId} estadoServicio={servicio.estado} modulosDefault={servicio.modulos_calculados} turnoActivo={turnoActivo} onCambiarTurno={(turno) => setTurnoActivo(turno)} onServicioCerrado={cargar} />
         )}
       </div>
     </AppShell>

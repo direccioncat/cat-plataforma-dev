@@ -10,10 +10,12 @@ import OrdenServicio from './pages/OrdenServicio'
 import OSAdicionalPage from './pages/OSAdicionalPage'
 import MiEquipo from './pages/MiEquipo'
 import ServiciosAdicionalesPage from './pages/ServiciosAdicionalesPage'
+import PresupuestosPage from './pages/PresupuestosPage'
 import PostularPage from './pages/PostularPage'
 
 const ROLES_OS = ['gerencia', 'admin', 'jefe_base', 'director', 'planeamiento', 'jefe_cgm', 'coordinador_cgm']
 const ROLES_SERVICIOS_ADICIONALES = ['admin', 'operador_adicionales', 'gerencia', 'director', 'jefe_cgm']
+const ROLES_PRESUPUESTOS = ['admin', 'operador_adicionales', 'gerencia', 'director', 'jefe_cgm']
 
 function RutaMisiones() {
   const { profile } = useAuth()
@@ -43,6 +45,13 @@ function RutaServiciosAdicionales() {
   return <ServiciosAdicionalesPage />
 }
 
+function RutaPresupuestos() {
+  const { profile } = useAuth()
+  const role = profile?.role ?? 'agente'
+  if (!ROLES_PRESUPUESTOS.includes(role)) return <Navigate to="/" />
+  return <PresupuestosPage />
+}
+
 export default function App() {
   return (
     <BrowserRouter>
@@ -58,6 +67,7 @@ export default function App() {
             <Route path="/equipo"                         element={<ProtectedRoute><MiEquipo /></ProtectedRoute>} />
             <Route path="/servicios-adicionales"          element={<ProtectedRoute><RutaServiciosAdicionales /></ProtectedRoute>} />
             <Route path="/servicios-adicionales/:id"      element={<ProtectedRoute><RutaServiciosAdicionales /></ProtectedRoute>} />
+            <Route path="/presupuestos"                   element={<ProtectedRoute><RutaPresupuestos /></ProtectedRoute>} />
             <Route path="/postular/:token"                element={<PostularPage />} />
             <Route path="*"                               element={<Navigate to="/" />} />
           </Routes>

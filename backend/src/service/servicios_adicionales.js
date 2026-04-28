@@ -310,34 +310,53 @@ async function getPresentismo(servicioId, turnoId) {
   return { data: await m.getPresentismo(servicioId, turnoId) };
 }
 
-async function registrarPresentismo(servicioId, turnoId, registros, userId) {
+// Roles que pueden modificar presentismo incluso con servicio cerrado
+const ROLES_PUEDE_EDITAR_CERRADO = ['admin', 'gerencia', 'director'];
+
+async function registrarPresentismo(servicioId, turnoId, registros, userId, userRole) {
   const client = await pool.connect();
   try {
+    // Verificar si el servicio está cerrado
+    const saR = await client.query('SELECT estado FROM servicios_adicionales WHERE id = $1', [servicioId]);
+    if (!saR.rows[0]) return { error: 'Servicio no encontrado', status: 404 };
+    if (saR.rows[0].estado === 'cerrado' && !ROLES_PUEDE_EDITAR_CERRADO.includes(userRole)) {
+      return { error: 'El presentismo de este servicio está cerrado. Solo un administrador puede modificarlo.', status: 403 };
+    }
+
     const turnoR = await client.query('SELECT fecha, modulos FROM sa_turnos WHERE id = $1', [turnoId]);
     if (!turnoR.rows[0]) return { error: 'Turno no encontrado', status: 404 };
     const turno      = turnoR.rows[0];
     const modsDef    = turno.modulos || 0;
     const periodo    = periodoActual();
     const periodoFin = await calcularPeriodoFinPenalizacion(periodo);
-    const penPts     = parseInt(await m.getConfigValor('penalizacion_ausencia_puntos', '20'));
-    const maxModsDia = parseInt(await m.getConfigValor('max_modulos_dia', '3'));
+    const penPts          = parseInt(await m.getConfigValor('penalizacion_ausencia_puntos', '20'));
+    const penPtsJust      = parseInt(await m.getConfigValor('penalizacion_ausencia_justificada_puntos', '0'));
+    const maxModsDia      = parseInt(await m.getConfigValor('max_modulos_dia', '3'));
     const fechaTurno = new Date(turno.fecha).toISOString().slice(0, 10);
     await client.query('BEGIN');
     const alertas = [];
     for (const r of registros) {
-      const estrR      = await m.getTipoConvocatoria(r.agente_id, turnoId);
+      const estrR       = await m.getTipoConvocatoria(r.agente_id, turnoId);
       const esAdicional = !estrR || estrR.tipo_convocatoria !== 'ordinario';
+      const justificado = r.ausencia_justificada === true;
       const mods        = (r.presente && esAdicional) ? (r.modulos_acreditados !== undefined ? r.modulos_acreditados : modsDef) : 0;
       if (r.presente && esAdicional && mods > 0) {
         const acumulado = await m.getModulosDiaAgente(r.agente_id, fechaTurno);
         if (acumulado + mods > maxModsDia)
           alertas.push({ agente_id: r.agente_id, mensaje: `Supera el maximo de ${maxModsDia} modulos/dia (acumulado: ${acumulado})` });
       }
-      await m.upsertPresentismo(client, { servicioId, turnoId, agente_id: r.agente_id, presente: r.presente, mods, userId });
+      await m.upsertPresentismo(client, { servicioId, turnoId, agente_id: r.agente_id, presente: r.presente, ausenciaJustificada: justificado, mods, userId });
       if (r.presente && esAdicional && mods > 0) {
         await m.upsertModulosAgente(client, { agente_id: r.agente_id, servicioId, periodo, mods });
       } else if (!r.presente && esAdicional) {
-        await m.insertPenalizacion(client, { agente_id: r.agente_id, servicioId, penPts, periodo, periodoFin, userId });
+        if (justificado && penPtsJust > 0) {
+          // Ausencia justificada con puntaje parcial configurado
+          await m.insertPenalizacion(client, { agente_id: r.agente_id, servicioId, penPts: penPtsJust, periodo, periodoFin, userId });
+        } else if (!justificado) {
+          // Ausencia injustificada — penalización completa
+          await m.insertPenalizacion(client, { agente_id: r.agente_id, servicioId, penPts, periodo, periodoFin, userId });
+        }
+        // Si justificado y penPtsJust === 0, no se genera ninguna penalización
       }
     }
     await client.query('COMMIT');

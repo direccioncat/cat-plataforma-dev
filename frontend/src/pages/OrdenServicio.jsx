@@ -16,6 +16,9 @@ const TIPOS_OS = [
   { id: 'alcoholemia', label: 'Alcoholemia', desc: 'Operativos de alcoholemia — acceso restringido', icon: '🔒', color: '#6b21a8', bg: '#f3e8ff' },
 ]
 
+// En el modal de creación no se ofrece "Adicional": ese flujo vive en Servicios Adicionales > OS Adicional
+const TIPOS_OS_MODAL = TIPOS_OS.filter(t => t.id !== 'adicional')
+
 const ESTADO_OS = {
   borrador:   { label: 'Borrador',      bg: '#f5f5f7', color: '#8e8e93' },
   validacion: { label: 'En validacion', bg: '#faeeda', color: '#854f0b' },
@@ -87,7 +90,7 @@ function ModalNuevaOS({ onConfirm, onClose }) {
         <div style={{ marginBottom: 20 }}>
           <div style={{ fontSize: 11, fontWeight: 700, color: '#aeaeb2', letterSpacing: '0.06em', marginBottom: 10 }}>TIPO DE ORDEN</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {TIPOS_OS.map(t => (
+            {TIPOS_OS_MODAL.map(t => (
               <div key={t.id} onClick={() => setTipo(t.id)}
                 style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 14px', borderRadius: 12, border: `1.5px solid ${tipo === t.id ? t.color : '#e5e5ea'}`, background: tipo === t.id ? t.bg : '#fff', cursor: 'pointer', transition: 'all 0.15s' }}>
                 <span style={{ fontSize: 20 }}>{t.icon}</span>
@@ -222,7 +225,8 @@ export default function OrdenServicio() {
     setLoading(true)
     try {
       const data = await api.get('/api/os')
-      setOrdenes(data ?? [])
+      // OS adicionales tienen su propio módulo en Servicios Adicionales
+      setOrdenes((data ?? []).filter(o => o.tipo !== 'adicional'))
     } catch (e) { console.warn('Error cargando OS:', e) }
     setLoading(false)
   }
@@ -238,13 +242,6 @@ export default function OrdenServicio() {
   }
 
   async function crearOS({ tipo, semana_inicio, semana_fin, fechas }) {
-    if (tipo === 'adicional') {
-      setShowModal(false)
-      const params = new URLSearchParams()
-      if (fechas?.length) params.set('fechas', fechas.join(','))
-      navigate(`/os-adicional?${params.toString()}`)
-      return
-    }
     setCreando(true)
     setShowModal(false)
     try {

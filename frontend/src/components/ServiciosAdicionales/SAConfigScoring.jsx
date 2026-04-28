@@ -7,34 +7,38 @@ const OPCIONES_SELECT = {
 }
 
 const LABELS = {
-  peso_modulo:                 'Peso de cada módulo (puntos)',
-  reset_periodo:               'Período de reseteo de módulos',
-  penalizacion_ausencia_meses: 'Duración penalización por ausencia (meses)',
-  penalizacion_ausencia_puntos:'Puntos por ausencia injustificada',
-  penalizacion_sancion_puntos: 'Puntos por sanción disciplinaria',
-  modulo_duracion_horas:       'Duración de un módulo (horas)',
-  scoring_formula:             'Fórmula de prioridad',
-  max_modulos_dia:             'Máximo de módulos por día',
+  peso_modulo:                               'Peso de cada módulo (puntos)',
+  reset_periodo:                             'Período de reseteo de módulos',
+  penalizacion_ausencia_meses:               'Duración penalización por ausencia (meses)',
+  penalizacion_ausencia_puntos:              'Puntos por ausencia injustificada',
+  penalizacion_ausencia_justificada_puntos:  'Puntos por ausencia justificada',
+  penalizacion_sancion_puntos:               'Puntos por sanción disciplinaria',
+  modulo_duracion_horas:                     'Duración de un módulo (horas)',
+  scoring_formula:                           'Fórmula de prioridad',
+  max_modulos_dia:                           'Máximo de módulos por día',
 }
 
 // Claves que forman parte del scoring (para el panel explicativo)
-const CLAVES_SCORING = ['peso_modulo', 'penalizacion_ausencia_puntos']
+const CLAVES_SCORING = ['peso_modulo', 'penalizacion_ausencia_puntos', 'penalizacion_ausencia_justificada_puntos']
 
 function PanelFormula({ editado }) {
-  const pesoModulo  = parseInt(editado['peso_modulo'] || 100)
-  const ptsAusencia = parseInt(editado['penalizacion_ausencia_puntos'] || 25)
-  const breakeven   = pesoModulo > 0 ? (pesoModulo / ptsAusencia).toFixed(1) : '—'
+  const pesoModulo    = parseInt(editado['peso_modulo'] || 100)
+  const ptsAusencia   = parseInt(editado['penalizacion_ausencia_puntos'] || 25)
+  const ptsJust       = parseInt(editado['penalizacion_ausencia_justificada_puntos'] || 0)
+  const breakeven     = pesoModulo > 0 ? (pesoModulo / ptsAusencia).toFixed(1) : '—'
+  const justAfecta    = ptsJust > 0
 
   const ejemplos = [
-    { label: '0 módulos, 0 ausencias', mods: 0, aus: 0 },
-    { label: '0 módulos, 1 ausencia',  mods: 0, aus: 1 },
-    { label: '1 módulo,  0 ausencias', mods: 1, aus: 0 },
-    { label: '1 módulo,  1 ausencia',  mods: 1, aus: 1 },
-    { label: '2 módulos, 0 ausencias', mods: 2, aus: 0 },
-    { label: '2 módulos, 3 ausencias', mods: 2, aus: 3 },
+    { label: '0 módulos, 0 ausencias',               mods: 0, aus: 0, just: 0 },
+    { label: '0 módulos, 1 ausencia injustificada',   mods: 0, aus: 1, just: 0 },
+    { label: '0 módulos, 1 ausencia justificada',     mods: 0, aus: 0, just: 1 },
+    { label: '1 módulo,  0 ausencias',                mods: 1, aus: 0, just: 0 },
+    { label: '1 módulo,  1 ausencia injustificada',   mods: 1, aus: 1, just: 0 },
+    { label: '2 módulos, 0 ausencias',                mods: 2, aus: 0, just: 0 },
+    { label: '2 módulos, 3 ausencias injustificadas', mods: 2, aus: 3, just: 0 },
   ]
 
-  function score(mods, aus) { return mods * pesoModulo + aus * ptsAusencia }
+  function score(mods, aus, just) { return mods * pesoModulo + aus * ptsAusencia + just * ptsJust }
 
   return (
     <div style={{
@@ -68,13 +72,10 @@ function PanelFormula({ editado }) {
           Σ penalizaciones
         </div>
         <div style={{ marginTop: 12, borderTop: '0.5px solid #2e3d5c', paddingTop: 12, fontFamily: 'monospace', fontSize: 13, color: '#a0b4cc', lineHeight: 1.7 }}>
-          <div>donde: 1 ausencia = <span style={{ color: '#f9a94b' }}>+{ptsAusencia} pts</span></div>
-          <div style={{ marginTop: 4, color: '#7b8db0' }}>
-            Prioridad = orden ascendente por Score
-          </div>
-          <div style={{ color: '#7b8db0' }}>
-            → Score 0 = máxima prioridad (llamado primero)
-          </div>
+          <div>1 ausencia injustificada = <span style={{ color: '#f9a94b' }}>+{ptsAusencia} pts</span></div>
+          <div>1 ausencia justificada{'   '}= <span style={{ color: justAfecta ? '#f9c86b' : '#5a7a9a' }}>{justAfecta ? `+${ptsJust} pts` : '0 pts (no afecta)'}</span></div>
+          <div style={{ marginTop: 4, color: '#7b8db0' }}>Prioridad = orden ascendente por Score</div>
+          <div style={{ color: '#7b8db0' }}>→ Score 0 = máxima prioridad (llamado primero)</div>
         </div>
       </div>
 
@@ -95,7 +96,12 @@ function PanelFormula({ editado }) {
             color="#e67e22"
           />
           <EquivRow
-            izq={<span style={{ color: '#636366' }}>Breakeven: <strong>{breakeven} ausencias</strong></span>}
+            izq={<><Pill color="#b86a0f">1 ausencia</Pill> justificada</>}
+            val={justAfecta ? `+${ptsJust} pts` : 'sin impacto'}
+            color={justAfecta ? '#b86a0f' : '#aeaeb2'}
+          />
+          <EquivRow
+            izq={<span style={{ color: '#636366' }}>Breakeven: <strong>{breakeven} ausencias injust.</strong></span>}
             val="= 1 módulo"
             color="#636366"
             note
@@ -115,7 +121,8 @@ function PanelFormula({ editado }) {
             <span style={{ fontSize: 11, fontWeight: 700, color: '#8e8e93', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'right', minWidth: 70 }}>Prioridad</span>
           </div>
           {[...ejemplos]
-            .map(e => ({ ...e, s: score(e.mods, e.aus) }))
+            .filter(e => e.just === 0 || justAfecta)
+            .map(e => ({ ...e, s: score(e.mods, e.aus, e.just) }))
             .sort((a, b) => a.s - b.s)
             .map((e, i, arr) => {
               const maxScore  = Math.max(...arr.map(x => x.s)) || 1

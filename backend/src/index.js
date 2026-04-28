@@ -24,7 +24,9 @@ const origenesPermitidos = [
   'http://localhost:5174',
   'http://localhost:5175',
   'http://localhost:3000',
-];
+  'https://cat-plataforma-dev.onrender.com',
+  process.env.FRONTEND_URL,
+].filter(Boolean);
 
 const corsOptions = {
   origin: (origin, callback) => {
@@ -59,6 +61,7 @@ app.use('/api/os',           require('./router/os'));
 app.use('/api/os-adicional',           require('./router/os_adicional'));
 app.use('/api/servicios-adicionales',  require('./router/servicios_adicionales'));
 app.use('/api/sanciones',              require('./router/sanciones'));
+app.use('/api/presupuestos',           require('./router/presupuestos'));
 app.use('/api/actividad',    require('./router/actividad'));
 app.use('/api/upload',       require('./router/upload'));
 app.use('/api/postular',     require('./router/postular'));
