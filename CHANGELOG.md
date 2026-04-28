@@ -4,6 +4,37 @@ Cambios incluidos en la rama `agustin` respecto al estado previo del repositorio
 
 ---
 
+## ⚠️ Acciones requeridas antes de testear
+
+> Estas dos acciones son **obligatorias** del lado del dev/servidor para que la rama funcione correctamente en Render.
+
+### 1. Ejecutar migración SQL en Supabase
+
+El módulo de Presupuestos requiere una tabla nueva en la base de datos. Sin esto, cualquier operación sobre presupuestos devuelve error 500.
+
+Ejecutar en la consola SQL de Supabase el contenido del archivo:
+```
+backend/src/db/presupuestos.sql
+```
+
+Crea la tabla `presupuestos` con trigger de auto-numeración (`P-001/2026`).
+
+### 2. Configurar `VITE_API_URL` en el build del frontend
+
+En `frontend/src/lib/api.js` la URL base del backend se define así:
+```js
+const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000'
+```
+
+Si `VITE_API_URL` está vacío al momento del build, el frontend en producción apunta a `http://localhost:3000` y **no puede conectarse al backend en Render**.
+
+Antes de buildear el frontend, asegurarse de que `VITE_API_URL` esté seteado con la URL del servicio backend en Render. Ejemplo:
+```
+VITE_API_URL=https://cat-plataforma-api.onrender.com
+```
+
+---
+
 ## [2026-04-28] — feat: Módulo Presupuestos + Trazabilidad OS Adicional + Fixes Producción
 
 ### 🆕 Módulo Presupuestos (nuevo, completo)
