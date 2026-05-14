@@ -62,7 +62,7 @@ app.disable('x-powered-by');
 app.use(cors(corsOptions));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-
+app.use(express.static(path.join(__dirname,'public')))
 app.use('/uploads', express.static(path.join(__dirname, '..', process.env.UPLOADS_DIR || 'uploads')));
 
 // ── Rutas ────────────────────────────────────────────────────
@@ -82,6 +82,10 @@ app.use('/api/postular',     require('./router/postular'));
 app.get('/api/health', (req, res) => res.json({ ok: true, ts: new Date().toISOString() }));
 
 app.set('io', io);
+
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
 
 // ── Socket.io — autenticación en handshake ───────────────────
 const jwt = require('jsonwebtoken');
