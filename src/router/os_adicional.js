@@ -23,7 +23,7 @@ router.post('/',  c.postOs);
 // ── OS individual ─────────────────────────────────────────────
 router.get('/:id',                   c.getOsById);
 router.put('/:id',                   c.putOs);
-router.delete('/:os_id',             c.deleteOs);
+router.delete('/:id',                c.deleteOs);
 router.post('/:id/enviar-validacion', c.postEnviarValidacion);
 router.post('/:id/validar',          c.postValidar);
 router.post('/:id/rechazar',         c.postRechazar);

@@ -75,9 +75,10 @@ const convocatoriaSchema = Joi.object({
 const presentismoSchema = Joi.object({
   registros: Joi.array().items(
     Joi.object({
-      agente_id:          Joi.string().uuid().required(),
-      presente:           Joi.boolean().required(),
-      modulos_acreditados: Joi.number().integer().min(0).optional(),
+      agente_id:            Joi.string().uuid().required(),
+      presente:             Joi.boolean().required(),
+      ausencia_justificada: Joi.boolean().optional(),
+      modulos_acreditados:  Joi.number().integer().min(0).optional(),
     })
   ).min(1).required(),
 });

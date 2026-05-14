@@ -242,7 +242,7 @@ async function updateConvocatoria(client, { cid, estado, userId, observaciones, 
 
 // ── Presentismo ───────────────────────────────────────────────
 async function getPresentismo(servicioId, turnoId) {
-  return (await pool.query("SELECT e.agente_id, e.rol, e.tipo_convocatoria, p.nombre_completo, p.legajo, pr.id AS presentismo_id, pr.presente, pr.modulos_acreditados, t.modulos AS modulos_default FROM sa_estructura e JOIN profiles p ON e.agente_id = p.id JOIN sa_turnos t ON t.id = e.turno_id LEFT JOIN sa_convocatoria c ON c.estructura_id = e.id LEFT JOIN sa_presentismo pr ON pr.agente_id = e.agente_id AND pr.turno_id = e.turno_id WHERE e.servicio_id = $1 AND e.turno_id = $2 AND (e.tipo_convocatoria = 'ordinario' OR (e.tipo_convocatoria = 'adicional' AND c.estado = 'confirmado')) ORDER BY e.tipo_convocatoria DESC, e.rol, p.nombre_completo", [servicioId, turnoId])).rows;
+  return (await pool.query("SELECT e.agente_id, e.rol, e.tipo_convocatoria, p.nombre_completo, p.legajo, pr.id AS presentismo_id, pr.presente, pr.ausencia_justificada, pr.modulos_acreditados, t.modulos AS modulos_default FROM sa_estructura e JOIN profiles p ON e.agente_id = p.id JOIN sa_turnos t ON t.id = e.turno_id LEFT JOIN sa_convocatoria c ON c.estructura_id = e.id LEFT JOIN sa_presentismo pr ON pr.agente_id = e.agente_id AND pr.turno_id = e.turno_id WHERE e.servicio_id = $1 AND e.turno_id = $2 AND (e.tipo_convocatoria = 'ordinario' OR (e.tipo_convocatoria = 'adicional' AND c.estado = 'confirmado')) ORDER BY e.tipo_convocatoria DESC, e.rol, p.nombre_completo", [servicioId, turnoId])).rows;
 }
 
 // ── Flyer ─────────────────────────────────────────────────────
@@ -308,8 +308,8 @@ async function getModulosDiaAgente(agenteId, fecha) {
   return parseInt((await pool.query('SELECT COALESCE(SUM(pr.modulos_acreditados),0) AS total FROM sa_presentismo pr JOIN sa_turnos t ON t.id = pr.turno_id WHERE pr.agente_id = $1 AND t.fecha = $2 AND pr.presente = true', [agenteId, fecha])).rows[0].total);
 }
 
-async function upsertPresentismo(client, { servicioId, turnoId, agente_id, presente, mods, userId }) {
-  await client.query('INSERT INTO sa_presentismo (servicio_id,turno_id,agente_id,presente,modulos_acreditados,registrado_por) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (servicio_id,agente_id,turno_id) DO UPDATE SET presente=$4, modulos_acreditados=$5, registrado_por=$6, registrado_at=NOW()', [servicioId, turnoId, agente_id, presente, mods, userId]);
+async function upsertPresentismo(client, { servicioId, turnoId, agente_id, presente, ausenciaJustificada, mods, userId }) {
+  await client.query('INSERT INTO sa_presentismo (servicio_id,turno_id,agente_id,presente,ausencia_justificada,modulos_acreditados,registrado_por) VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (servicio_id,agente_id,turno_id) DO UPDATE SET presente=$4, ausencia_justificada=$5, modulos_acreditados=$6, registrado_por=$7, registrado_at=NOW()', [servicioId, turnoId, agente_id, presente, ausenciaJustificada ?? false, mods, userId]);
 }
 
 async function upsertModulosAgente(client, { agente_id, servicioId, periodo, mods }) {

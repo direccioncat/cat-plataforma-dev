@@ -23,8 +23,10 @@ const origenesPermitidos = [
   'http://localhost:5173',
   'http://localhost:5174',
   'http://localhost:5175',
+  'http://localhost:3000',
   'https://cat-plataforma-dev.onrender.com',
-];
+  process.env.FRONTEND_URL,
+].filter(Boolean);
 
 const corsOptions = {
   origin: (origin, callback) => {
@@ -43,10 +45,7 @@ const io = new Server(server, {
   },
 });
 
-app.use(helmet({
-  contentSecurityPolicy: false,
-  crossOriginEmbedderPolicy: false
-}));
+app.use(helmet());
 app.use(cors(corsOptions));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -54,7 +53,6 @@ app.use(express.urlencoded({ extended: true }));
 app.use('/uploads', express.static(path.join(__dirname, '..', process.env.UPLOADS_DIR || 'uploads')));
 
 // ── Rutas ────────────────────────────────────────────────────
-app.get('/api/health', (req, res) => res.json({ ok: true, ts: new Date().toISOString() }));
 app.use('/api/auth',         require('./router/auth'));
 app.use('/api/profiles',     require('./router/profiles'));
 app.use('/api/bases',        require('./router/bases'));
@@ -63,16 +61,12 @@ app.use('/api/os',           require('./router/os'));
 app.use('/api/os-adicional',           require('./router/os_adicional'));
 app.use('/api/servicios-adicionales',  require('./router/servicios_adicionales'));
 app.use('/api/sanciones',              require('./router/sanciones'));
+app.use('/api/presupuestos',           require('./router/presupuestos'));
 app.use('/api/actividad',    require('./router/actividad'));
 app.use('/api/upload',       require('./router/upload'));
 app.use('/api/postular',     require('./router/postular'));
 
-app.use(express.static(path.join(__dirname,'..','public')))
-app.get('*',(req, res, next) => {
-  if (req.path.startsWith('/api/')) return next()
-    res.sendFile(path.join(__dirname,'..','public','index.html'))
-})
-
+app.get('/api/health', (req, res) => res.json({ ok: true, ts: new Date().toISOString() }));
 
 app.set('io', io);
 
