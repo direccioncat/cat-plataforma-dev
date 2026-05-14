@@ -62,7 +62,7 @@ app.disable('x-powered-by');
 app.use(cors(corsOptions));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(express.static(path.join(__dirname,'public')))
+app.use(express.static(path.join(__dirname,'..','public')))
 app.use('/uploads', express.static(path.join(__dirname, '..', process.env.UPLOADS_DIR || 'uploads')));
 
 // ── Rutas ────────────────────────────────────────────────────
@@ -84,7 +84,7 @@ app.get('/api/health', (req, res) => res.json({ ok: true, ts: new Date().toISOSt
 app.set('io', io);
 
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  res.sendFile(path.join(__dirname,'..', 'public', 'index.html'));
 });
 
 // ── Socket.io — autenticación en handshake ───────────────────
