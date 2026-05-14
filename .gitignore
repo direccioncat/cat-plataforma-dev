@@ -1,0 +1,8 @@
+﻿node_modules/
+.env
+uploads/
+*.log
+*.bat
+subir_frontend_github.js
+xcopy_exclude.txt
+schema.sql
